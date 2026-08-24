@@ -8,6 +8,11 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+DEFAULT_CACHE_STORES = [
+    "https://cache.nixos.org",
+    "https://cache.bingyin.org",
+]
+
 
 def run_json(command: list[str]) -> dict[str, Any]:
     print("+ " + " ".join(command), file=sys.stderr)
@@ -54,11 +59,12 @@ def workflow_targets(plan: dict[str, Any], workflow: str) -> list[dict[str, Any]
     return targets
 
 
-def evaluate_drv_paths(
+def evaluate_targets(
     flake: str,
     targets: list[dict[str, Any]],
-) -> dict[str, str]:
+) -> tuple[dict[str, str], dict[str, list[str]]]:
     drv_paths: dict[str, str] = {}
+    output_paths: dict[str, list[str]] = {}
     systems = list(dict.fromkeys(target["system"] for target in targets))
 
     for system in systems:
@@ -68,10 +74,13 @@ def evaluate_drv_paths(
         expression = (
             "packages: "
             f"let names = builtins.fromJSON {json.dumps(names_json)}; in "
-            "builtins.listToAttrs (map (name: { "
-            "inherit name; "
-            "value = (builtins.getAttr name packages).drvPath; "
-            "}) names)"
+            "builtins.listToAttrs (map (name: let "
+            "package = builtins.getAttr name packages; "
+            'outputs = package.meta.outputsToInstall or [ (package.outputName or "out") ]; '
+            "in { inherit name; value = { "
+            "drvPath = package.drvPath; "
+            "outputPaths = map (output: builtins.toString (builtins.getAttr output package)) outputs; "
+            "}; }) names)"
         )
         evaluated = run_json(
             [
@@ -84,12 +93,97 @@ def evaluate_drv_paths(
             ]
         )
         for target in system_targets:
-            drv_path = evaluated.get(target["name"])
+            value = evaluated.get(target["name"])
+            if not isinstance(value, dict):
+                raise TypeError(f"missing evaluation result for {target['id']}")
+            drv_path = value.get("drvPath")
+            outputs = value.get("outputPaths")
             if not isinstance(drv_path, str):
                 raise TypeError(f"missing drvPath for {target['id']}")
+            if not isinstance(outputs, list) or not all(
+                isinstance(output, str) for output in outputs
+            ):
+                raise TypeError(f"missing output paths for {target['id']}")
             drv_paths[target["id"]] = drv_path
+            output_paths[target["id"]] = outputs
 
-    return drv_paths
+    return drv_paths, output_paths
+
+
+def query_cache(store: str, paths: Iterable[str]) -> set[str]:
+    unique_paths = list(dict.fromkeys(paths))
+    if not unique_paths:
+        return set()
+
+    command = [
+        "nix",
+        "path-info",
+        "--json",
+        "--json-format",
+        "1",
+        "--store",
+        store,
+        *unique_paths,
+    ]
+    print(
+        f"+ nix path-info --store {store} ({len(unique_paths)} paths)",
+        file=sys.stderr,
+    )
+    result = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(
+            f"warning: cache query failed for {store}; scheduling affected targets",
+            file=sys.stderr,
+        )
+        if result.stderr:
+            print(result.stderr.rstrip(), file=sys.stderr)
+        return set()
+
+    value = json.loads(result.stdout)
+    if not isinstance(value, dict):
+        raise TypeError(f"cache query for {store} returned a non-object")
+    return {path for path, metadata in value.items() if metadata is not None}
+
+
+def cached_paths(stores: list[str], paths: Iterable[str]) -> set[str]:
+    missing = set(paths)
+    cached: set[str] = set()
+
+    for store in stores:
+        found = query_cache(store, sorted(missing))
+        cached.update(found)
+        missing.difference_update(found)
+        print(
+            f"cache {store}: found {len(found)}, remaining {len(missing)}",
+            file=sys.stderr,
+        )
+        if not missing:
+            break
+
+    return cached
+
+
+def uncached_targets(
+    targets: list[dict[str, Any]],
+    output_paths: dict[str, list[str]],
+    cached: set[str],
+) -> list[dict[str, Any]]:
+    result = [
+        target
+        for target in targets
+        if not output_paths[target["id"]]
+        or not all(output in cached for output in output_paths[target["id"]])
+    ]
+    print(
+        f"cache pruning: {len(targets) - len(result)} cached, {len(result)} to build",
+        file=sys.stderr,
+    )
+    return result
 
 
 def store_path(value: str) -> str:
@@ -103,7 +197,9 @@ def derivation_graph(drv_paths: Iterable[str]) -> dict[str, Any]:
     value = run_json(["nix", "derivation", "show", "--recursive", *unique_paths])
     derivations = value.get("derivations")
     if isinstance(derivations, dict):
-        return {store_path(path): derivation for path, derivation in derivations.items()}
+        return {
+            store_path(path): derivation for path, derivation in derivations.items()
+        }
     return value
 
 
@@ -185,7 +281,9 @@ def topological_layers(
     while remaining:
         ready_ids = [target_id for target_id, values in remaining.items() if not values]
         if not ready_ids:
-            cycle = {target_id: sorted(values) for target_id, values in remaining.items()}
+            cycle = {
+                target_id: sorted(values) for target_id, values in remaining.items()
+            }
             raise ValueError(f"package dependency graph contains a cycle: {cycle}")
 
         ready_ids.sort(key=lambda target_id: by_id[target_id]["order"])
@@ -241,6 +339,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--flake", default=".")
     parser.add_argument("--max-layers", type=int, default=32)
+    parser.add_argument("--cache-store", action="append", dest="cache_stores")
     return parser.parse_args()
 
 
@@ -248,9 +347,15 @@ def main() -> None:
     args = parse_args()
     plan = json.loads(args.plan.read_text())
     targets = workflow_targets(plan, args.workflow)
-    drv_paths = evaluate_drv_paths(args.flake, targets)
+    drv_paths, output_paths = evaluate_targets(args.flake, targets)
     graph = derivation_graph(drv_paths.values())
-    canonical_targets, dependencies = package_dependencies(targets, drv_paths, graph)
+    stores = args.cache_stores or DEFAULT_CACHE_STORES
+    outputs = [output for values in output_paths.values() for output in values]
+    cached = cached_paths(stores, outputs)
+    build_targets = uncached_targets(targets, output_paths, cached)
+    canonical_targets, dependencies = package_dependencies(
+        build_targets, drv_paths, graph
+    )
     layers = topological_layers(canonical_targets, dependencies)
     matrices = matrix_layers(layers, args.max_layers)
 

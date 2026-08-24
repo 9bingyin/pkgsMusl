@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       nixpkgs_ref:
-        description: Nixpkgs branch or full commit
+        description: Nixpkgs branch, full commit, or lock
         required: false
-        default: master
+        default: lock
 permissions:
   contents: read
   id-token: write
@@ -32,9 +32,15 @@ jobs:
         name: Resolve nixpkgs and dependency layers
         shell: bash
         env:
-          NIXPKGS_REF: ${{ inputs.nixpkgs_ref || 'master' }}
+          NIXPKGS_REF: ${{ inputs.nixpkgs_ref || 'lock' }}
         run: |
-          if [[ "$NIXPKGS_REF" =~ ^[0-9a-f]{40}$ ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
+            NIXPKGS_REF=master
+          fi
+
+          if [[ "$NIXPKGS_REF" == "lock" ]]; then
+            revision="$(jq -r '.nodes["nixpkgs-build"].locked.rev // empty' flake.lock)"
+          elif [[ "$NIXPKGS_REF" =~ ^[0-9a-f]{40}$ ]]; then
             revision="$NIXPKGS_REF"
           else
             revision="$(git ls-remote https://github.com/NixOS/nixpkgs.git "refs/heads/$NIXPKGS_REF" | awk 'NR == 1 { print $1 }')"
