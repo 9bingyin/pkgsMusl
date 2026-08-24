@@ -1,0 +1,300 @@
+name: Build musl cache
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      nixpkgs_ref:
+        description: Nixpkgs branch or full commit
+        required: false
+        default: master
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: musl-cache-core
+  cancel-in-progress: false
+jobs:
+  prepare:
+    name: Prepare build matrices
+    runs-on: ubuntu-24.04
+    outputs:
+      nixpkgs_revision: ${{ steps.plan.outputs.nixpkgs_revision }}
+      bootstrap_xgcc: ${{ steps.plan.outputs.bootstrap_xgcc }}
+      bootstrap_libc: ${{ steps.plan.outputs.bootstrap_libc }}
+      bootstrap_stage2_tools: ${{ steps.plan.outputs.bootstrap_stage2_tools }}
+      bootstrap_compiler_libs: ${{ steps.plan.outputs.bootstrap_compiler_libs }}
+      bootstrap_final_gcc: ${{ steps.plan.outputs.bootstrap_final_gcc }}
+      bootstrap_runtime: ${{ steps.plan.outputs.bootstrap_runtime }}
+      final_stdenv: ${{ steps.plan.outputs.final_stdenv }}
+      build_tools: ${{ steps.plan.outputs.build_tools }}
+      base_libraries: ${{ steps.plan.outputs.base_libraries }}
+      rust_core: ${{ steps.plan.outputs.rust_core }}
+      rust_tools: ${{ steps.plan.outputs.rust_tools }}
+      go_toolchain: ${{ steps.plan.outputs.go_toolchain }}
+      smoke_tests: ${{ steps.plan.outputs.smoke_tests }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve nixpkgs revision and matrices
+        id: plan
+        env:
+          NIXPKGS_REF: ${{ inputs.nixpkgs_ref || 'master' }}
+        run: |
+          if [[ "$NIXPKGS_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            revision="$NIXPKGS_REF"
+          else
+            revision=$(git ls-remote https://github.com/NixOS/nixpkgs.git "refs/heads/$NIXPKGS_REF" | awk 'NR == 1 { print $1 }')
+          fi
+
+          if [[ -z "$revision" ]]; then
+            echo "Could not resolve nixpkgs ref: $NIXPKGS_REF" >&2
+            exit 1
+          fi
+
+          echo "Using nixpkgs revision $revision"
+
+          matrix() {
+            local phase="$1"
+            jq --compact-output --arg phase "$phase" '
+              {
+                include: [
+                  .systems[] as $target
+                  | .phases[$phase][]
+                  | select(((.systems // [$target.system]) | index($target.system)) != null)
+                  | {
+                      package: .name,
+                      system: $target.system,
+                      runner: $target.runner
+                    }
+                ]
+              }
+            ' nix/cache-plan.json
+          }
+
+          {
+            echo "nixpkgs_revision=$revision"
+            echo "bootstrap_xgcc=$(matrix bootstrap-xgcc)"
+            echo "bootstrap_libc=$(matrix bootstrap-libc)"
+            echo "bootstrap_stage2_tools=$(matrix bootstrap-stage2-tools)"
+            echo "bootstrap_compiler_libs=$(matrix bootstrap-compiler-libs)"
+            echo "bootstrap_final_gcc=$(matrix bootstrap-final-gcc)"
+            echo "bootstrap_runtime=$(matrix bootstrap-runtime)"
+            echo "final_stdenv=$(matrix final-stdenv)"
+            echo "build_tools=$(matrix build-tools)"
+            echo "base_libraries=$(matrix base-libraries)"
+            echo "rust_core=$(matrix rust-core)"
+            echo "rust_tools=$(matrix rust-tools)"
+            echo "go_toolchain=$(matrix go-toolchain)"
+            echo "smoke_tests=$(matrix smoke-tests)"
+          } >> "$GITHUB_OUTPUT"
+  bootstrap-xgcc:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.bootstrap_xgcc) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  bootstrap-libc:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - bootstrap-xgcc
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.bootstrap_libc) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  bootstrap-stage2-tools:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - bootstrap-libc
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.bootstrap_stage2_tools) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  bootstrap-compiler-libs:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - bootstrap-stage2-tools
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.bootstrap_compiler_libs) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  bootstrap-final-gcc:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - bootstrap-compiler-libs
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.bootstrap_final_gcc) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  bootstrap-runtime:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - bootstrap-final-gcc
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.bootstrap_runtime) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  final-stdenv:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - bootstrap-runtime
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.final_stdenv) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  build-tools:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - final-stdenv
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.build_tools) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  base-libraries:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - final-stdenv
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.base_libraries) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  rust-core:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - build-tools
+      - base-libraries
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.rust_core) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  rust-tools:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - rust-core
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.rust_tools) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  go-toolchain:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - build-tools
+      - base-libraries
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.go_toolchain) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  smoke-tests:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - rust-tools
+      - go-toolchain
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.smoke_tests) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}

@@ -1,0 +1,694 @@
+{
+  "systems": [
+    {
+      "system": "x86_64-linux",
+      "runner": "ubuntu-24.04"
+    },
+    {
+      "system": "aarch64-linux",
+      "runner": "ubuntu-24.04-arm"
+    }
+  ],
+  "phases": {
+    "bootstrap-xgcc": [
+      {
+        "name": "boot-xgcc-binutils",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage-xgcc-stdenv-linux",
+          "path": ["binutils"]
+        }
+      },
+      {
+        "name": "boot-xgcc-gcc-unwrapped",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage-xgcc-stdenv-linux",
+          "path": ["gcc-unwrapped"]
+        }
+      }
+    ],
+    "bootstrap-libc": [
+      {
+        "name": "boot-stage2-musl",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage2-stdenv-linux",
+          "path": ["musl"]
+        }
+      }
+    ],
+    "bootstrap-stage2-tools": [
+      {
+        "name": "boot-stage2-binutils",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage2-stdenv-linux",
+          "path": ["binutils"]
+        }
+      },
+      {
+        "name": "boot-stage2-patchelf",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage2-stdenv-linux",
+          "path": ["patchelf"]
+        }
+      },
+      {
+        "name": "boot-stage2-libunistring",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage2-stdenv-linux",
+          "path": ["libunistring"]
+        }
+      },
+      {
+        "name": "boot-stage2-libidn2",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage2-stdenv-linux",
+          "path": ["libidn2"]
+        }
+      }
+    ],
+    "bootstrap-compiler-libs": [
+      {
+        "name": "boot-stage3-gmp",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage3-stdenv-linux",
+          "path": ["gmp"]
+        }
+      },
+      {
+        "name": "boot-stage3-mpfr",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage3-stdenv-linux",
+          "path": ["mpfr"]
+        }
+      },
+      {
+        "name": "boot-stage3-libmpc",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage3-stdenv-linux",
+          "path": ["libmpc"]
+        }
+      },
+      {
+        "name": "boot-stage3-isl",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage3-stdenv-linux",
+          "path": ["isl"]
+        }
+      }
+    ],
+    "bootstrap-final-gcc": [
+      {
+        "name": "boot-stage3-gcc-unwrapped",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage3-stdenv-linux",
+          "path": ["gcc-unwrapped"]
+        }
+      }
+    ],
+    "bootstrap-runtime": [
+      {
+        "name": "boot-stage4-bash",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["bashNonInteractive"]
+        }
+      },
+      {
+        "name": "boot-stage4-binutils",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["binutils"]
+        }
+      },
+      {
+        "name": "boot-stage4-gcc-wrapper",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["gcc"]
+        }
+      },
+      {
+        "name": "boot-stage4-coreutils",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["coreutils"]
+        }
+      },
+      {
+        "name": "boot-stage4-diffutils",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["diffutils"]
+        }
+      },
+      {
+        "name": "boot-stage4-findutils",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["findutils"]
+        }
+      },
+      {
+        "name": "boot-stage4-gawk",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["gawk"]
+        }
+      },
+      {
+        "name": "boot-stage4-gnumake",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["gnumake"]
+        }
+      },
+      {
+        "name": "boot-stage4-gnused",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["gnused"]
+        }
+      },
+      {
+        "name": "boot-stage4-gnutar",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["gnutar"]
+        }
+      },
+      {
+        "name": "boot-stage4-gnugrep",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["gnugrep"]
+        }
+      },
+      {
+        "name": "boot-stage4-gnupatch",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["gnupatch"]
+        }
+      },
+      {
+        "name": "boot-stage4-gzip",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["gzip"]
+        }
+      },
+      {
+        "name": "boot-stage4-bzip2",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["bzip2"]
+        }
+      },
+      {
+        "name": "boot-stage4-xz",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["xz"]
+        }
+      },
+      {
+        "name": "boot-stage4-file",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["file"]
+        }
+      },
+      {
+        "name": "boot-stage4-ed",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["ed"]
+        }
+      },
+      {
+        "name": "boot-stage4-patchelf",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["patchelf"]
+        }
+      },
+      {
+        "name": "boot-stage4-attr",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["attr"]
+        }
+      },
+      {
+        "name": "boot-stage4-acl",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["acl"]
+        }
+      },
+      {
+        "name": "boot-stage4-zlib",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["zlib"]
+        }
+      },
+      {
+        "name": "boot-stage4-libunistring",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["libunistring"]
+        }
+      },
+      {
+        "name": "boot-stage4-libidn2",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["libidn2"]
+        }
+      },
+      {
+        "name": "boot-stage4-linux-headers",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["linuxHeaders"]
+        }
+      },
+      {
+        "name": "boot-stage4-fortify-headers",
+        "source": {
+          "kind": "stage",
+          "stage": "bootstrap-stage4-stdenv-linux",
+          "path": ["fortify-headers"]
+        }
+      }
+    ],
+    "final-stdenv": [
+      {
+        "name": "musl-stdenv",
+        "source": {
+          "kind": "musl",
+          "path": ["stdenv"]
+        }
+      }
+    ],
+    "build-tools": [
+      {
+        "name": "musl-pkg-config",
+        "source": {
+          "kind": "musl",
+          "path": ["pkg-config"]
+        }
+      },
+      {
+        "name": "musl-autoconf",
+        "source": {
+          "kind": "musl",
+          "path": ["autoconf"]
+        }
+      },
+      {
+        "name": "musl-automake",
+        "source": {
+          "kind": "musl",
+          "path": ["automake"]
+        }
+      },
+      {
+        "name": "musl-libtool",
+        "source": {
+          "kind": "musl",
+          "path": ["libtool"]
+        }
+      },
+      {
+        "name": "musl-bison",
+        "source": {
+          "kind": "musl",
+          "path": ["bison"]
+        }
+      },
+      {
+        "name": "musl-flex",
+        "source": {
+          "kind": "musl",
+          "path": ["flex"]
+        }
+      },
+      {
+        "name": "musl-gettext",
+        "source": {
+          "kind": "musl",
+          "path": ["gettext"]
+        }
+      },
+      {
+        "name": "musl-perl",
+        "source": {
+          "kind": "musl",
+          "path": ["perl"]
+        }
+      },
+      {
+        "name": "musl-python3-minimal",
+        "source": {
+          "kind": "musl",
+          "path": ["python3Minimal"]
+        }
+      },
+      {
+        "name": "musl-python3",
+        "source": {
+          "kind": "musl",
+          "path": ["python3"]
+        }
+      },
+      {
+        "name": "musl-cmake",
+        "source": {
+          "kind": "musl",
+          "path": ["cmake"]
+        }
+      },
+      {
+        "name": "musl-ninja",
+        "source": {
+          "kind": "musl",
+          "path": ["ninja"]
+        }
+      },
+      {
+        "name": "musl-meson",
+        "source": {
+          "kind": "musl",
+          "path": ["meson"]
+        }
+      },
+      {
+        "name": "musl-which",
+        "source": {
+          "kind": "musl",
+          "path": ["which"]
+        }
+      },
+      {
+        "name": "musl-make-wrapper",
+        "source": {
+          "kind": "musl",
+          "path": ["makeWrapper"]
+        }
+      },
+      {
+        "name": "musl-git-minimal",
+        "source": {
+          "kind": "musl",
+          "path": ["gitMinimal"]
+        }
+      }
+    ],
+    "base-libraries": [
+      {
+        "name": "musl-openssl",
+        "source": {
+          "kind": "musl",
+          "path": ["openssl"]
+        }
+      },
+      {
+        "name": "musl-curl",
+        "source": {
+          "kind": "musl",
+          "path": ["curl"]
+        }
+      },
+      {
+        "name": "musl-zstd",
+        "source": {
+          "kind": "musl",
+          "path": ["zstd"]
+        }
+      },
+      {
+        "name": "musl-libffi",
+        "source": {
+          "kind": "musl",
+          "path": ["libffi"]
+        }
+      },
+      {
+        "name": "musl-libxml2",
+        "source": {
+          "kind": "musl",
+          "path": ["libxml2"]
+        }
+      },
+      {
+        "name": "musl-sqlite",
+        "source": {
+          "kind": "musl",
+          "path": ["sqlite"]
+        }
+      },
+      {
+        "name": "musl-ncurses",
+        "source": {
+          "kind": "musl",
+          "path": ["ncurses"]
+        }
+      },
+      {
+        "name": "musl-readline",
+        "source": {
+          "kind": "musl",
+          "path": ["readline"]
+        }
+      },
+      {
+        "name": "musl-expat",
+        "source": {
+          "kind": "musl",
+          "path": ["expat"]
+        }
+      },
+      {
+        "name": "musl-libarchive",
+        "source": {
+          "kind": "musl",
+          "path": ["libarchive"]
+        }
+      },
+      {
+        "name": "musl-libssh2",
+        "source": {
+          "kind": "musl",
+          "path": ["libssh2"]
+        }
+      },
+      {
+        "name": "musl-nghttp2",
+        "source": {
+          "kind": "musl",
+          "path": ["nghttp2"]
+        }
+      }
+    ],
+    "rust-core": [
+      {
+        "name": "musl-rustc",
+        "source": {
+          "kind": "musl",
+          "path": ["rustc"]
+        }
+      }
+    ],
+    "rust-tools": [
+      {
+        "name": "musl-cargo",
+        "source": {
+          "kind": "musl",
+          "path": ["cargo"]
+        }
+      },
+      {
+        "name": "musl-rustfmt",
+        "source": {
+          "kind": "musl",
+          "path": ["rustfmt"]
+        }
+      },
+      {
+        "name": "musl-clippy",
+        "source": {
+          "kind": "musl",
+          "path": ["clippy"]
+        }
+      }
+    ],
+    "go-toolchain": [
+      {
+        "name": "musl-go",
+        "source": {
+          "kind": "musl",
+          "path": ["go"]
+        }
+      }
+    ],
+    "smoke-tests": [
+      {
+        "name": "musl-hello",
+        "source": {
+          "kind": "musl",
+          "path": ["hello"]
+        }
+      },
+      {
+        "name": "musl-busybox",
+        "source": {
+          "kind": "musl",
+          "path": ["busybox"]
+        }
+      },
+      {
+        "name": "musl-fd",
+        "source": {
+          "kind": "musl",
+          "path": ["fd"]
+        }
+      },
+      {
+        "name": "musl-dropbear",
+        "source": {
+          "kind": "musl",
+          "path": ["dropbear"]
+        }
+      }
+    ],
+    "llvm-core": [
+      {
+        "name": "musl-llvm",
+        "source": {
+          "kind": "musl",
+          "path": ["llvmPackages", "llvm"]
+        }
+      }
+    ],
+    "llvm-runtimes": [
+      {
+        "name": "musl-compiler-rt",
+        "source": {
+          "kind": "musl",
+          "path": ["llvmPackages", "compiler-rt"]
+        }
+      },
+      {
+        "name": "musl-libunwind",
+        "source": {
+          "kind": "musl",
+          "path": ["llvmPackages", "libunwind"]
+        }
+      },
+      {
+        "name": "musl-libcxx",
+        "source": {
+          "kind": "musl",
+          "path": ["llvmPackages", "libcxx"]
+        }
+      }
+    ],
+    "llvm-tools": [
+      {
+        "name": "musl-clang",
+        "source": {
+          "kind": "musl",
+          "path": ["llvmPackages", "clang"]
+        }
+      },
+      {
+        "name": "musl-lld",
+        "source": {
+          "kind": "musl",
+          "path": ["llvmPackages", "lld"]
+        }
+      },
+      {
+        "name": "musl-clang-tools",
+        "source": {
+          "kind": "musl",
+          "path": ["llvmPackages", "clang-tools"]
+        }
+      }
+    ],
+    "extended-packages": [
+      {
+        "name": "musl-gdb",
+        "source": {
+          "kind": "musl",
+          "path": ["gdb"]
+        }
+      },
+      {
+        "name": "musl-icu",
+        "source": {
+          "kind": "musl",
+          "path": ["icu"]
+        }
+      },
+      {
+        "name": "musl-boost",
+        "source": {
+          "kind": "musl",
+          "path": ["boost"]
+        }
+      },
+      {
+        "name": "musl-protobuf",
+        "source": {
+          "kind": "musl",
+          "path": ["protobuf"]
+        }
+      },
+      {
+        "name": "musl-nix",
+        "source": {
+          "kind": "musl",
+          "path": ["nix"]
+        }
+      }
+    ]
+  }
+}

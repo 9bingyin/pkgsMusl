@@ -1,0 +1,150 @@
+name: Build extended musl cache
+on:
+  schedule:
+    - cron: "43 3 * * 6"
+  workflow_dispatch:
+    inputs:
+      nixpkgs_ref:
+        description: Nixpkgs branch or full commit
+        required: false
+        default: master
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: musl-cache-extended
+  cancel-in-progress: false
+jobs:
+  prepare:
+    name: Prepare build matrices
+    runs-on: ubuntu-24.04
+    outputs:
+      nixpkgs_revision: ${{ steps.plan.outputs.nixpkgs_revision }}
+      final_stdenv: ${{ steps.plan.outputs.final_stdenv }}
+      llvm_core: ${{ steps.plan.outputs.llvm_core }}
+      llvm_runtimes: ${{ steps.plan.outputs.llvm_runtimes }}
+      llvm_tools: ${{ steps.plan.outputs.llvm_tools }}
+      extended_packages: ${{ steps.plan.outputs.extended_packages }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve nixpkgs revision and matrices
+        id: plan
+        env:
+          NIXPKGS_REF: ${{ inputs.nixpkgs_ref || 'master' }}
+        run: |
+          if [[ "$NIXPKGS_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            revision="$NIXPKGS_REF"
+          else
+            revision=$(git ls-remote https://github.com/NixOS/nixpkgs.git "refs/heads/$NIXPKGS_REF" | awk 'NR == 1 { print $1 }')
+          fi
+
+          if [[ -z "$revision" ]]; then
+            echo "Could not resolve nixpkgs ref: $NIXPKGS_REF" >&2
+            exit 1
+          fi
+
+          echo "Using nixpkgs revision $revision"
+
+          matrix() {
+            local phase="$1"
+            jq --compact-output --arg phase "$phase" '
+              {
+                include: [
+                  .systems[] as $target
+                  | .phases[$phase][]
+                  | select(((.systems // [$target.system]) | index($target.system)) != null)
+                  | {
+                      package: .name,
+                      system: $target.system,
+                      runner: $target.runner
+                    }
+                ]
+              }
+            ' nix/cache-plan.json
+          }
+
+          {
+            echo "nixpkgs_revision=$revision"
+            echo "final_stdenv=$(matrix final-stdenv)"
+            echo "llvm_core=$(matrix llvm-core)"
+            echo "llvm_runtimes=$(matrix llvm-runtimes)"
+            echo "llvm_tools=$(matrix llvm-tools)"
+            echo "extended_packages=$(matrix extended-packages)"
+          } >> "$GITHUB_OUTPUT"
+  final-stdenv:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.final_stdenv) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  llvm-core:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - final-stdenv
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.llvm_core) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  llvm-runtimes:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - llvm-core
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.llvm_runtimes) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  llvm-tools:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - llvm-runtimes
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.llvm_tools) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  extended-packages:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - final-stdenv
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.extended_packages) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
