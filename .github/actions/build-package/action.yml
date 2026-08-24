@@ -10,6 +10,23 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Enable TCP BBR
+      shell: bash
+      run: |
+        if ! sudo modprobe tcp_bbr 2>/dev/null; then
+          echo "::notice::tcp_bbr is unavailable; keeping the default congestion control"
+          exit 0
+        fi
+
+        if ! sysctl -n net.ipv4.tcp_available_congestion_control | grep -qw bbr; then
+          echo "::notice::BBR is unavailable; keeping the default congestion control"
+          exit 0
+        fi
+
+        sudo sysctl -q -w net.core.default_qdisc=fq
+        sudo sysctl -q -w net.ipv4.tcp_congestion_control=bbr
+        echo "TCP congestion control: $(sysctl -n net.ipv4.tcp_congestion_control)"
+        echo "Default qdisc: $(sysctl -n net.core.default_qdisc)"
     - name: Install Nix
       uses: cachix/install-nix-action@v31
       with:
