@@ -109,6 +109,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix: ${{ fromJSON(needs.prepare.outputs.llvm_runtimes) }}
     steps:
       - uses: actions/checkout@v5
@@ -125,6 +126,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix: ${{ fromJSON(needs.prepare.outputs.llvm_tools) }}
     steps:
       - uses: actions/checkout@v5
@@ -141,6 +143,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix: ${{ fromJSON(needs.prepare.outputs.extended_packages) }}
     steps:
       - uses: actions/checkout@v5

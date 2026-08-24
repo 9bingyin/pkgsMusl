@@ -9,6 +9,83 @@
       "runner": "ubuntu-24.04-arm"
     }
   ],
+  "waves": {
+    "build-tools-core": [
+      "musl-pkg-config",
+      "musl-autoconf",
+      "musl-automake",
+      "musl-libtool",
+      "musl-bison",
+      "musl-flex",
+      "musl-gettext",
+      "musl-perl",
+      "musl-python3-minimal",
+      "musl-which",
+      "musl-make-wrapper"
+    ],
+    "foundation-roots": [
+      "musl-openssl",
+      "musl-cmake-minimal",
+      "musl-keyutils",
+      "musl-ncurses",
+      "musl-libffi",
+      "musl-sqlite",
+      "musl-expat",
+      "musl-gdbm",
+      "musl-mpdecimal",
+      "musl-tcl",
+      "musl-c-ares",
+      "musl-libev",
+      "musl-lzo",
+      "musl-rhash",
+      "musl-libuv",
+      "musl-util-linux-minimal",
+      "musl-libcap-ng",
+      "musl-bluez-headers",
+      "musl-swig",
+      "musl-mailcap",
+      "musl-autoconf-archive",
+      "musl-byacc"
+    ],
+    "foundation-level2": [
+      "musl-zstd",
+      "musl-readline",
+      "musl-libedit",
+      "musl-expect",
+      "musl-libxml2"
+    ],
+    "foundation-level3": [
+      "musl-krb5",
+      "musl-nghttp2",
+      "musl-libssh2",
+      "musl-dejagnu",
+      "musl-libarchive"
+    ],
+    "foundation-runtimes": [
+      "musl-python3"
+    ],
+    "network-level1": [
+      "musl-publicsuffix-list",
+      "musl-brotli",
+      "musl-nghttp3"
+    ],
+    "network-level2": [
+      "musl-libpsl",
+      "musl-ngtcp2",
+      "musl-curl-minimal"
+    ],
+    "build-tools-modern": [
+      "musl-cmake",
+      "musl-ninja",
+      "musl-meson"
+    ],
+    "full-curl": [
+      "musl-curl"
+    ],
+    "git": [
+      "musl-git-minimal"
+    ]
+  },
   "phases": {
     "bootstrap-xgcc": [
       {
@@ -324,6 +401,197 @@
         "source": {
           "kind": "musl",
           "path": ["stdenv"]
+        }
+      }
+    ],
+    "foundation-dependencies": [
+      {
+        "name": "musl-cmake-minimal",
+        "source": {
+          "kind": "musl",
+          "path": ["cmakeMinimal"]
+        }
+      },
+      {
+        "name": "musl-keyutils",
+        "source": {
+          "kind": "musl",
+          "path": ["keyutils"]
+        }
+      },
+      {
+        "name": "musl-libedit",
+        "source": {
+          "kind": "musl",
+          "path": ["libedit"]
+        }
+      },
+      {
+        "name": "musl-byacc",
+        "source": {
+          "kind": "musl",
+          "path": ["byacc"]
+        }
+      },
+      {
+        "name": "musl-krb5",
+        "source": {
+          "kind": "musl",
+          "path": ["krb5"]
+        }
+      },
+      {
+        "name": "musl-c-ares",
+        "source": {
+          "kind": "musl",
+          "path": ["c-ares"]
+        }
+      },
+      {
+        "name": "musl-libev",
+        "source": {
+          "kind": "musl",
+          "path": ["libev"]
+        }
+      },
+      {
+        "name": "musl-lzo",
+        "source": {
+          "kind": "musl",
+          "path": ["lzo"]
+        }
+      },
+      {
+        "name": "musl-rhash",
+        "source": {
+          "kind": "musl",
+          "path": ["rhash"]
+        }
+      },
+      {
+        "name": "musl-libuv",
+        "source": {
+          "kind": "musl",
+          "path": ["libuv"]
+        }
+      },
+      {
+        "name": "musl-gdbm",
+        "source": {
+          "kind": "musl",
+          "path": ["gdbm"]
+        }
+      },
+      {
+        "name": "musl-mpdecimal",
+        "source": {
+          "kind": "musl",
+          "path": ["mpdecimal"]
+        }
+      },
+      {
+        "name": "musl-tcl",
+        "source": {
+          "kind": "musl",
+          "path": ["tcl"]
+        }
+      },
+      {
+        "name": "musl-util-linux-minimal",
+        "source": {
+          "kind": "musl",
+          "path": ["util-linuxMinimal"]
+        }
+      },
+      {
+        "name": "musl-libcap-ng",
+        "source": {
+          "kind": "musl",
+          "path": ["libcap_ng"]
+        }
+      },
+      {
+        "name": "musl-bluez-headers",
+        "source": {
+          "kind": "musl",
+          "path": ["bluez-headers"]
+        }
+      },
+      {
+        "name": "musl-swig",
+        "source": {
+          "kind": "musl",
+          "path": ["swig"]
+        }
+      },
+      {
+        "name": "musl-mailcap",
+        "source": {
+          "kind": "musl",
+          "path": ["mailcap"]
+        }
+      },
+      {
+        "name": "musl-autoconf-archive",
+        "source": {
+          "kind": "musl",
+          "path": ["autoconf-archive"]
+        }
+      },
+      {
+        "name": "musl-expect",
+        "source": {
+          "kind": "musl",
+          "path": ["expect"]
+        }
+      },
+      {
+        "name": "musl-dejagnu",
+        "source": {
+          "kind": "musl",
+          "path": ["dejagnu"]
+        }
+      },
+      {
+        "name": "musl-curl-minimal",
+        "source": {
+          "kind": "musl",
+          "path": ["curlMinimal"]
+        }
+      },
+      {
+        "name": "musl-publicsuffix-list",
+        "source": {
+          "kind": "musl",
+          "path": ["publicsuffix-list"]
+        }
+      },
+      {
+        "name": "musl-libpsl",
+        "source": {
+          "kind": "musl",
+          "path": ["libpsl"]
+        }
+      },
+      {
+        "name": "musl-brotli",
+        "source": {
+          "kind": "musl",
+          "path": ["brotli"]
+        }
+      },
+      {
+        "name": "musl-nghttp3",
+        "source": {
+          "kind": "musl",
+          "path": ["nghttp3"]
+        }
+      },
+      {
+        "name": "musl-ngtcp2",
+        "source": {
+          "kind": "musl",
+          "path": ["ngtcp2"]
         }
       }
     ],

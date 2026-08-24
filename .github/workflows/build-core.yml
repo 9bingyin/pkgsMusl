@@ -30,8 +30,16 @@ jobs:
       bootstrap_final_gcc: ${{ steps.plan.outputs.bootstrap_final_gcc }}
       bootstrap_runtime: ${{ steps.plan.outputs.bootstrap_runtime }}
       final_stdenv: ${{ steps.plan.outputs.final_stdenv }}
-      build_tools: ${{ steps.plan.outputs.build_tools }}
-      base_libraries: ${{ steps.plan.outputs.base_libraries }}
+      build_tools_core: ${{ steps.plan.outputs.build_tools_core }}
+      foundation_roots: ${{ steps.plan.outputs.foundation_roots }}
+      foundation_level2: ${{ steps.plan.outputs.foundation_level2 }}
+      foundation_level3: ${{ steps.plan.outputs.foundation_level3 }}
+      foundation_runtimes: ${{ steps.plan.outputs.foundation_runtimes }}
+      network_level1: ${{ steps.plan.outputs.network_level1 }}
+      network_level2: ${{ steps.plan.outputs.network_level2 }}
+      build_tools_modern: ${{ steps.plan.outputs.build_tools_modern }}
+      full_curl: ${{ steps.plan.outputs.full_curl }}
+      git: ${{ steps.plan.outputs.git }}
       rust_core: ${{ steps.plan.outputs.rust_core }}
       rust_tools: ${{ steps.plan.outputs.rust_tools }}
       go_toolchain: ${{ steps.plan.outputs.go_toolchain }}
@@ -56,7 +64,7 @@ jobs:
 
           echo "Using nixpkgs revision $revision"
 
-          matrix() {
+          phase_matrix() {
             local phase="$1"
             jq --compact-output --arg phase "$phase" '
               {
@@ -74,21 +82,50 @@ jobs:
             ' nix/cache-plan.json
           }
 
+          wave_matrix() {
+            local wave="$1"
+            jq --compact-output --arg wave "$wave" '
+              [.phases[][]] as $packages
+              | {
+                  include: [
+                    .systems[] as $target
+                    | .waves[$wave][] as $name
+                    | $packages[]
+                    | select(.name == $name)
+                    | select(((.systems // [$target.system]) | index($target.system)) != null)
+                    | {
+                        package: .name,
+                        system: $target.system,
+                        runner: $target.runner
+                      }
+                  ]
+                }
+            ' nix/cache-plan.json
+          }
+
           {
             echo "nixpkgs_revision=$revision"
-            echo "bootstrap_xgcc=$(matrix bootstrap-xgcc)"
-            echo "bootstrap_libc=$(matrix bootstrap-libc)"
-            echo "bootstrap_stage2_tools=$(matrix bootstrap-stage2-tools)"
-            echo "bootstrap_compiler_libs=$(matrix bootstrap-compiler-libs)"
-            echo "bootstrap_final_gcc=$(matrix bootstrap-final-gcc)"
-            echo "bootstrap_runtime=$(matrix bootstrap-runtime)"
-            echo "final_stdenv=$(matrix final-stdenv)"
-            echo "build_tools=$(matrix build-tools)"
-            echo "base_libraries=$(matrix base-libraries)"
-            echo "rust_core=$(matrix rust-core)"
-            echo "rust_tools=$(matrix rust-tools)"
-            echo "go_toolchain=$(matrix go-toolchain)"
-            echo "smoke_tests=$(matrix smoke-tests)"
+            echo "bootstrap_xgcc=$(phase_matrix bootstrap-xgcc)"
+            echo "bootstrap_libc=$(phase_matrix bootstrap-libc)"
+            echo "bootstrap_stage2_tools=$(phase_matrix bootstrap-stage2-tools)"
+            echo "bootstrap_compiler_libs=$(phase_matrix bootstrap-compiler-libs)"
+            echo "bootstrap_final_gcc=$(phase_matrix bootstrap-final-gcc)"
+            echo "bootstrap_runtime=$(phase_matrix bootstrap-runtime)"
+            echo "final_stdenv=$(phase_matrix final-stdenv)"
+            echo "build_tools_core=$(wave_matrix build-tools-core)"
+            echo "foundation_roots=$(wave_matrix foundation-roots)"
+            echo "foundation_level2=$(wave_matrix foundation-level2)"
+            echo "foundation_level3=$(wave_matrix foundation-level3)"
+            echo "foundation_runtimes=$(wave_matrix foundation-runtimes)"
+            echo "network_level1=$(wave_matrix network-level1)"
+            echo "network_level2=$(wave_matrix network-level2)"
+            echo "build_tools_modern=$(wave_matrix build-tools-modern)"
+            echo "full_curl=$(wave_matrix full-curl)"
+            echo "git=$(wave_matrix git)"
+            echo "rust_core=$(phase_matrix rust-core)"
+            echo "rust_tools=$(phase_matrix rust-tools)"
+            echo "go_toolchain=$(phase_matrix go-toolchain)"
+            echo "smoke_tests=$(phase_matrix smoke-tests)"
           } >> "$GITHUB_OUTPUT"
   bootstrap-xgcc:
     name: ${{ matrix.system }} / ${{ matrix.package }}
@@ -199,7 +236,7 @@ jobs:
         with:
           package: ${{ matrix.package }}
           nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
-  build-tools:
+  build-tools-core:
     name: ${{ matrix.system }} / ${{ matrix.package }}
     needs:
       - prepare
@@ -208,23 +245,161 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare.outputs.build_tools) }}
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.build_tools_core) }}
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/build-package
         with:
           package: ${{ matrix.package }}
           nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
-  base-libraries:
+  foundation-roots:
     name: ${{ matrix.system }} / ${{ matrix.package }}
     needs:
       - prepare
-      - final-stdenv
+      - build-tools-core
     if: ${{ !cancelled() && needs.prepare.result == 'success' }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare.outputs.base_libraries) }}
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.foundation_roots) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  foundation-level2:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - foundation-roots
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.foundation_level2) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  foundation-level3:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - foundation-level2
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.foundation_level3) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  foundation-runtimes:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - foundation-level3
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.foundation_runtimes) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  network-level1:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - foundation-runtimes
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.network_level1) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  network-level2:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - network-level1
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.network_level2) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  build-tools-modern:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - network-level2
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.build_tools_modern) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  full-curl:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - build-tools-modern
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.prepare.outputs.full_curl) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/build-package
+        with:
+          package: ${{ matrix.package }}
+          nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  git:
+    name: ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - full-curl
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.prepare.outputs.git) }}
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/build-package
@@ -235,8 +410,7 @@ jobs:
     name: ${{ matrix.system }} / ${{ matrix.package }}
     needs:
       - prepare
-      - build-tools
-      - base-libraries
+      - git
     if: ${{ !cancelled() && needs.prepare.result == 'success' }}
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -268,8 +442,7 @@ jobs:
     name: ${{ matrix.system }} / ${{ matrix.package }}
     needs:
       - prepare
-      - build-tools
-      - base-libraries
+      - git
     if: ${{ !cancelled() && needs.prepare.result == 'success' }}
     runs-on: ${{ matrix.runner }}
     strategy:
