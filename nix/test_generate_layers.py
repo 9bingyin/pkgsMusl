@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
+import json
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -68,6 +71,53 @@ class GenerateLayersTest(unittest.TestCase):
             [[target["name"] for target in layer] for layer in layers],
             [["a"], ["b", "c"], ["d"]],
         )
+
+    def test_retries_nix_batch_query_by_bisection(self) -> None:
+        paths = [f"/nix/store/{name}" for name in ["a", "b", "c", "d"]]
+        responses = [
+            SimpleNamespace(
+                returncode=1,
+                stdout="",
+                stderr=f"error: path '{paths[1]}' is not valid",
+            ),
+            SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({paths[0]: {}, paths[1]: None}),
+                stderr="",
+            ),
+            SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({paths[2]: {}, paths[3]: None}),
+                stderr="",
+            ),
+        ]
+
+        with patch.object(
+            generate_layers.subprocess, "run", side_effect=responses
+        ) as run:
+            result = generate_layers.query_cache("https://cache.example", paths)
+
+        self.assertEqual(result, {paths[0], paths[2]})
+        self.assertEqual(run.call_count, 3)
+        first_command = run.call_args_list[0].args[0]
+        self.assertNotIn("http-connections", first_command)
+        self.assertNotIn("--max-jobs", first_command)
+
+    def test_does_not_split_network_failures(self) -> None:
+        paths = ["/nix/store/a", "/nix/store/b"]
+        response = SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="error: unable to download narinfo: TLS failure",
+        )
+
+        with patch.object(
+            generate_layers.subprocess, "run", return_value=response
+        ) as run:
+            result = generate_layers.query_cache("https://cache.example", paths)
+
+        self.assertEqual(result, set())
+        self.assertEqual(run.call_count, 1)
 
     def test_prunes_only_fully_cached_targets(self) -> None:
         targets = [

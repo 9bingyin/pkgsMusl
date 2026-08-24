@@ -110,11 +110,17 @@ def evaluate_targets(
     return drv_paths, output_paths
 
 
-def query_cache(store: str, paths: Iterable[str]) -> set[str]:
-    unique_paths = list(dict.fromkeys(paths))
-    if not unique_paths:
-        return set()
+def parse_cache_result(stdout: str, paths: list[str]) -> set[str] | None:
+    try:
+        value = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(value, dict) or set(value) != set(paths):
+        return None
+    return {path for path, metadata in value.items() if metadata is not None}
 
+
+def query_cache_batch(store: str, paths: list[str], depth: int = 0) -> set[str]:
     command = [
         "nix",
         "path-info",
@@ -123,31 +129,49 @@ def query_cache(store: str, paths: Iterable[str]) -> set[str]:
         "1",
         "--store",
         store,
-        *unique_paths,
+        *paths,
     ]
-    print(
-        f"+ nix path-info --store {store} ({len(unique_paths)} paths)",
-        file=sys.stderr,
-    )
     result = subprocess.run(
         command,
         check=False,
         capture_output=True,
         text=True,
     )
-    if result.returncode != 0:
-        print(
-            f"warning: cache query failed for {store}; scheduling affected targets",
-            file=sys.stderr,
+    found = parse_cache_result(result.stdout, paths)
+    if found is not None:
+        return found
+
+    is_invalid_path_bug = "is not valid" in result.stderr
+    if len(paths) > 1 and is_invalid_path_bug:
+        middle = len(paths) // 2
+        if depth == 0:
+            print(
+                f"cache query hit the Nix batch bug for {store}; retrying {len(paths)} paths by bisection",
+                file=sys.stderr,
+            )
+        return query_cache_batch(store, paths[:middle], depth + 1) | query_cache_batch(
+            store, paths[middle:], depth + 1
         )
-        if result.stderr:
-            print(result.stderr.rstrip(), file=sys.stderr)
+
+    print(
+        f"warning: cache query failed for {store}; scheduling {len(paths)} affected paths",
+        file=sys.stderr,
+    )
+    if result.stderr:
+        print(result.stderr.rstrip(), file=sys.stderr)
+    return set()
+
+
+def query_cache(store: str, paths: Iterable[str]) -> set[str]:
+    unique_paths = list(dict.fromkeys(paths))
+    if not unique_paths:
         return set()
 
-    value = json.loads(result.stdout)
-    if not isinstance(value, dict):
-        raise TypeError(f"cache query for {store} returned a non-object")
-    return {path for path, metadata in value.items() if metadata is not None}
+    print(
+        f"+ nix path-info --store {store} ({len(unique_paths)} paths)",
+        file=sys.stderr,
+    )
+    return query_cache_batch(store, unique_paths)
 
 
 def cached_paths(stores: list[str], paths: Iterable[str]) -> set[str]:
