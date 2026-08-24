@@ -174,6 +174,18 @@ class GenerateLayersTest(unittest.TestCase):
         ):
             self.assertEqual(generate_layers.nix_http_connections(), 31)
 
+    def test_reads_fixed_output_path_from_environment(self) -> None:
+        fixed_drv = drv("a", "source")
+        fixed_output = output("b", "source")
+        value = derivation("source", "b")
+        value["outputs"] = {"out": {"hash": "sha256-example", "method": "flat"}}
+        value["env"] = {"out": fixed_output}
+
+        self.assertEqual(
+            generate_layers.derivation_outputs(fixed_drv, value),
+            {"out": fixed_output},
+        )
+
     def test_rejects_dynamic_derivation_inputs(self) -> None:
         dependency = drv("a", "dependency")
         root = drv("b", "root")

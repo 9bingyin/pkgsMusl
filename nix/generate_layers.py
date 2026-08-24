@@ -140,6 +140,10 @@ def derivation_outputs(drv_path: str, derivation: dict[str, Any]) -> dict[str, s
     if not isinstance(outputs, dict):
         raise TypeError(f"derivation {drv_path} has invalid outputs")
 
+    environment = derivation.get("env", {})
+    if not isinstance(environment, dict):
+        raise TypeError(f"derivation {drv_path} has invalid environment")
+
     result: dict[str, str] = {}
     for name, value in outputs.items():
         path: Any
@@ -147,6 +151,12 @@ def derivation_outputs(drv_path: str, derivation: dict[str, Any]) -> dict[str, s
             path = value.get("path")
         else:
             path = value
+        if path is None:
+            environment_path = environment.get(name)
+            if isinstance(environment_path, str) and environment_path.startswith(
+                "/nix/store/"
+            ):
+                path = environment_path
         if path is None:
             continue
         if not isinstance(path, str):
