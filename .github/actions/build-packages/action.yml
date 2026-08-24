@@ -39,6 +39,9 @@ runs:
         done
 
         printf 'Building %d package targets in one Nix dependency graph\n' "${#targets[@]}"
+        nix flake lock \
+          --override-input nixpkgs-build "github:NixOS/nixpkgs/$NIXPKGS_REVISION"
+
         df -h /nix
         trap 'df -h /nix || true' EXIT
 
@@ -49,5 +52,4 @@ runs:
           --keep-going \
           --max-jobs auto \
           --cores 0 \
-          --override-input nixpkgs "github:NixOS/nixpkgs/$NIXPKGS_REVISION" \
           "${targets[@]}"

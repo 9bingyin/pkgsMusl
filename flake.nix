@@ -2,7 +2,8 @@
   description = "Build and cache nixpkgs musl toolchains";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/master";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    nixpkgs-build.url = "github:NixOS/nixpkgs/master";
 
     flake-parts.url = "github:hercules-ci/flake-parts";
 
@@ -26,9 +27,13 @@
 
       perSystem =
         { pkgs, system, ... }:
+        let
+          buildPkgs = import inputs.nixpkgs-build { inherit system; };
+        in
         {
           packages = import ./nix/cache-packages.nix {
-            inherit pkgs plan system;
+            pkgs = buildPkgs;
+            inherit plan system;
           };
 
           treefmt.programs = {
