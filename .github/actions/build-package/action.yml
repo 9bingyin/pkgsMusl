@@ -1,0 +1,35 @@
+name: Build package
+description: Build one flake package and upload completed derivations to niks3
+inputs:
+  package:
+    description: Flake package name
+    required: true
+  nixpkgs-revision:
+    description: Nixpkgs revision used for the build
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          access-tokens = github.com=${{ github.token }}
+    - name: Configure niks3 cache
+      uses: Mic92/niks3-action@v1
+      with:
+        server-url: https://niks3.bingyin.org
+    - name: Build package
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        NIXPKGS_REVISION: ${{ inputs.nixpkgs-revision }}
+      run: |
+        nix build \
+          --no-link \
+          --print-build-logs \
+          --max-jobs auto \
+          --cores 0 \
+          --override-input nixpkgs-build "github:NixOS/nixpkgs/$NIXPKGS_REVISION" \
+          ".#$PACKAGE"

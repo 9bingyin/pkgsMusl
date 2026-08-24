@@ -13,7 +13,7 @@ on:
       - flake.nix
       - flake.lock
       - nix/**
-      - .github/actions/build-packages/**
+      - .github/actions/build-package/**
       - .github/workflows/build-core.yml
   schedule:
     - cron: "17 2 * * *"
@@ -25,15 +25,20 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prepare:
-    name: Prepare build matrix
+    name: Generate dependency layers
     runs-on: ubuntu-24.04
     outputs:
       nixpkgs_revision: ${{ steps.plan.outputs.nixpkgs_revision }}
-      matrix: ${{ steps.plan.outputs.matrix }}
+      layers: ${{ steps.plan.outputs.layers }}
     steps:
       - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ github.token }}
       - id: plan
-        name: Resolve nixpkgs and package sets
+        name: Resolve nixpkgs and dependency layers
         shell: bash
         env:
           NIXPKGS_REF: ${{ inputs.nixpkgs_ref || 'master' }}
@@ -49,52 +54,368 @@ jobs:
             exit 1
           fi
 
-          matrix="$(jq --compact-output --arg workflow core '
-            {
-              include: [
-                .systems[] as $target
-                | {
-                    system: $target.system,
-                    runner: $target.runner,
-                    packages: ([
-                      .workflows[$workflow][] as $phase
-                      | .phases[$phase][]
-                      | select(((.systems // [$target.system]) | index($target.system)) != null)
-                      | .name
-                    ] | tojson)
-                  }
-              ]
-            }
-          ' nix/cache-plan.json)"
+          nix flake lock \
+            --override-input nixpkgs-build "github:NixOS/nixpkgs/$revision"
+          layers="$(python3 nix/generate_layers.py --workflow core --max-layers 32)"
 
           {
             echo "nixpkgs_revision=$revision"
-            echo "matrix=$matrix"
+            echo "layers=$layers"
           } >>"$GITHUB_OUTPUT"
-  build:
-    name: ${{ matrix.system }} / core package graph
+  layer-00:
+    name: Layer 00 / ${{ matrix.system }} / ${{ matrix.package }}
     needs: prepare
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 360
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
-    steps:
-      - name: Maximize Nix store space
-        uses: easimon/maximize-build-space@v10
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[0] }}
+    steps: &build-steps
+      - if: ${{ matrix.enabled }}
+        uses: actions/checkout@v5
+      - if: ${{ matrix.enabled }}
+        uses: ./.github/actions/build-package
         with:
-          root-reserve-mb: "4096"
-          temp-reserve-mb: "1024"
-          swap-size-mb: "4096"
-          build-mount-path: /nix
-          build-mount-path-ownership: root:root
-          remove-dotnet: "true"
-          remove-android: "true"
-          remove-haskell: "true"
-          remove-codeql: "true"
-          remove-docker-images: "true"
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/build-packages
-        with:
-          packages: ${{ matrix.packages }}
+          package: ${{ matrix.package }}
           nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
+  layer-01:
+    name: Layer 01 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-00
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[1] }}
+    steps: *build-steps
+  layer-02:
+    name: Layer 02 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-01
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[2] }}
+    steps: *build-steps
+  layer-03:
+    name: Layer 03 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-02
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[3] }}
+    steps: *build-steps
+  layer-04:
+    name: Layer 04 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-03
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[4] }}
+    steps: *build-steps
+  layer-05:
+    name: Layer 05 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[5] }}
+    steps: *build-steps
+  layer-06:
+    name: Layer 06 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-05
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[6] }}
+    steps: *build-steps
+  layer-07:
+    name: Layer 07 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-06
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[7] }}
+    steps: *build-steps
+  layer-08:
+    name: Layer 08 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-07
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[8] }}
+    steps: *build-steps
+  layer-09:
+    name: Layer 09 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-08
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[9] }}
+    steps: *build-steps
+  layer-10:
+    name: Layer 10 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-09
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[10] }}
+    steps: *build-steps
+  layer-11:
+    name: Layer 11 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-10
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[11] }}
+    steps: *build-steps
+  layer-12:
+    name: Layer 12 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-11
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[12] }}
+    steps: *build-steps
+  layer-13:
+    name: Layer 13 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-12
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[13] }}
+    steps: *build-steps
+  layer-14:
+    name: Layer 14 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-13
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[14] }}
+    steps: *build-steps
+  layer-15:
+    name: Layer 15 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-14
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[15] }}
+    steps: *build-steps
+  layer-16:
+    name: Layer 16 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-15
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[16] }}
+    steps: *build-steps
+  layer-17:
+    name: Layer 17 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-16
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[17] }}
+    steps: *build-steps
+  layer-18:
+    name: Layer 18 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-17
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[18] }}
+    steps: *build-steps
+  layer-19:
+    name: Layer 19 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-18
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[19] }}
+    steps: *build-steps
+  layer-20:
+    name: Layer 20 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-19
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[20] }}
+    steps: *build-steps
+  layer-21:
+    name: Layer 21 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-20
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[21] }}
+    steps: *build-steps
+  layer-22:
+    name: Layer 22 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-21
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[22] }}
+    steps: *build-steps
+  layer-23:
+    name: Layer 23 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-22
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[23] }}
+    steps: *build-steps
+  layer-24:
+    name: Layer 24 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-23
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[24] }}
+    steps: *build-steps
+  layer-25:
+    name: Layer 25 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-24
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[25] }}
+    steps: *build-steps
+  layer-26:
+    name: Layer 26 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-25
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[26] }}
+    steps: *build-steps
+  layer-27:
+    name: Layer 27 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-26
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[27] }}
+    steps: *build-steps
+  layer-28:
+    name: Layer 28 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-27
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[28] }}
+    steps: *build-steps
+  layer-29:
+    name: Layer 29 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-28
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[29] }}
+    steps: *build-steps
+  layer-30:
+    name: Layer 30 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-29
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[30] }}
+    steps: *build-steps
+  layer-31:
+    name: Layer 31 / ${{ matrix.system }} / ${{ matrix.package }}
+    needs:
+      - prepare
+      - layer-30
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[31] }}
+    steps: *build-steps
