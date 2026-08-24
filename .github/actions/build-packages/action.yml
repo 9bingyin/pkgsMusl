@@ -1,0 +1,53 @@
+name: Build packages
+description: Build a package set and upload completed derivations to niks3
+inputs:
+  packages:
+    description: JSON array of flake package names
+    required: true
+  nixpkgs-revision:
+    description: Nixpkgs revision used for the build
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          access-tokens = github.com=${{ github.token }}
+    - name: Configure niks3 cache
+      uses: Mic92/niks3-action@v1
+      with:
+        server-url: https://niks3.bingyin.org
+        drain-timeout: "3600"
+    - name: Build packages
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+        NIXPKGS_REVISION: ${{ inputs.nixpkgs-revision }}
+      run: |
+        mapfile -t packages < <(jq --exit-status --raw-output '.[]' <<<"$PACKAGES")
+        if [[ "${#packages[@]}" -eq 0 ]]; then
+          echo "package list is empty" >&2
+          exit 1
+        fi
+
+        targets=()
+        for package in "${packages[@]}"; do
+          targets+=(".#$package")
+        done
+
+        printf 'Building %d package targets in one Nix dependency graph\n' "${#targets[@]}"
+        df -h /nix
+        trap 'df -h /nix || true' EXIT
+
+        timeout --signal=INT --kill-after=5m 285m \
+          nix build \
+          --no-link \
+          --print-build-logs \
+          --keep-going \
+          --max-jobs auto \
+          --cores 0 \
+          --override-input nixpkgs "github:NixOS/nixpkgs/$NIXPKGS_REVISION" \
+          "${targets[@]}"
