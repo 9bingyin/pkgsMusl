@@ -1,8 +1,20 @@
-name: Build package
-description: Build one flake package and upload completed derivations to niks3
+name: Build derivation
+description: Build one derivation and upload its outputs to niks3
 inputs:
   package:
-    description: Flake package name
+    description: Root flake package used to instantiate the derivation closure
+    required: true
+  owner-system:
+    description: Nix system of the root package
+    required: true
+  derivation:
+    description: Exact derivation path to build
+    required: true
+  outputs:
+    description: Comma-separated derivation outputs to realise
+    required: true
+  inputs:
+    description: JSON array of direct derived paths and source paths
     required: true
   nixpkgs-revision:
     description: Nixpkgs revision used for the build
@@ -37,16 +49,58 @@ runs:
       uses: Mic92/niks3-action@v1
       with:
         server-url: https://niks3.bingyin.org
-    - name: Build package
+    - name: Build derivation
       shell: bash
       env:
         PACKAGE: ${{ inputs.package }}
+        OWNER_SYSTEM: ${{ inputs.owner-system }}
+        DERIVATION: ${{ inputs.derivation }}
+        OUTPUTS: ${{ inputs.outputs }}
+        DIRECT_INPUTS: ${{ inputs.inputs }}
         NIXPKGS_REVISION: ${{ inputs.nixpkgs-revision }}
       run: |
+        owner_drv="$(nix eval \
+          --raw \
+          --override-input nixpkgs-build "github:NixOS/nixpkgs/$NIXPKGS_REVISION" \
+          ".#packages.$OWNER_SYSTEM.$PACKAGE.drvPath")"
+        owner_graph="$(mktemp)"
+        trap 'rm -f "$owner_graph"' EXIT
+        nix derivation show --recursive "$owner_drv" >"$owner_graph"
+
+        if ! jq -e \
+          --arg full "$DERIVATION" \
+          --arg base "$(basename "$DERIVATION")" \
+          '(.derivations // .) | has($full) or has($base)' \
+          "$owner_graph" >/dev/null; then
+          echo "Planned derivation is not reachable from $OWNER_SYSTEM:$PACKAGE: $DERIVATION" >&2
+          exit 1
+        fi
+        if [[ -z "$OUTPUTS" ]]; then
+          echo "No derivation outputs were selected for $DERIVATION" >&2
+          exit 1
+        fi
+        if ! jq -e 'type == "array" and all(.[]; type == "string")' \
+          <<<"$DIRECT_INPUTS" >/dev/null; then
+          echo "Invalid direct input list for $DERIVATION" >&2
+          exit 1
+        fi
+
+        mapfile -t direct_inputs < <(jq -r '.[]' <<<"$DIRECT_INPUTS")
+        if (( ${#direct_inputs[@]} > 0 )); then
+          nix build \
+            --no-link \
+            --print-build-logs \
+            --max-jobs 0 \
+            --builders '' \
+            --option always-allow-substitutes true \
+            "${direct_inputs[@]}"
+        fi
+
         nix build \
           --no-link \
           --print-build-logs \
-          --max-jobs auto \
+          --max-jobs 1 \
           --cores 0 \
-          --override-input nixpkgs-build "github:NixOS/nixpkgs/$NIXPKGS_REVISION" \
-          ".#$PACKAGE"
+          --builders '' \
+          --option always-allow-substitutes true \
+          "$DERIVATION^$OUTPUTS"

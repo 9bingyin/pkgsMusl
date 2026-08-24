@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 
-import json
 import sys
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -12,184 +10,200 @@ sys.path.insert(0, str(Path(__file__).parent))
 import generate_layers
 
 
-class GenerateLayersTest(unittest.TestCase):
-    def test_builds_topological_layers(self) -> None:
-        targets = [
-            {
-                "id": "x86_64-linux:a",
-                "name": "a",
-                "system": "x86_64-linux",
-                "runner": "ubuntu-24.04",
-                "order": 0,
-            },
-            {
-                "id": "x86_64-linux:b",
-                "name": "b",
-                "system": "x86_64-linux",
-                "runner": "ubuntu-24.04",
-                "order": 1,
-            },
-            {
-                "id": "x86_64-linux:c",
-                "name": "c",
-                "system": "x86_64-linux",
-                "runner": "ubuntu-24.04",
-                "order": 2,
-            },
-            {
-                "id": "x86_64-linux:d",
-                "name": "d",
-                "system": "x86_64-linux",
-                "runner": "ubuntu-24.04",
-                "order": 3,
-            },
-        ]
-        drv_paths = {
-            "x86_64-linux:a": "/nix/store/a.drv",
-            "x86_64-linux:b": "/nix/store/b.drv",
-            "x86_64-linux:c": "/nix/store/c.drv",
-            "x86_64-linux:d": "/nix/store/d.drv",
-        }
-        graph = {
-            "/nix/store/a.drv": {"inputDrvs": {}},
-            "/nix/store/b.drv": {"inputDrvs": {"/nix/store/a.drv": {}}},
-            "/nix/store/c.drv": {"inputDrvs": {"/nix/store/a.drv": {}}},
-            "/nix/store/d.drv": {
-                "inputDrvs": {
-                    "/nix/store/b.drv": {},
-                    "/nix/store/c.drv": {},
-                }
-            },
-        }
+def drv(hash_character: str, name: str) -> str:
+    return f"/nix/store/{hash_character * 32}-{name}.drv"
 
-        canonical, dependencies = generate_layers.package_dependencies(
-            targets, drv_paths, graph
+
+def output(hash_character: str, name: str) -> str:
+    return f"/nix/store/{hash_character * 32}-{name}"
+
+
+def derivation(
+    name: str,
+    hash_character: str,
+    inputs: dict[str, list[str]] | None = None,
+    outputs: tuple[str, ...] = ("out",),
+) -> dict[str, object]:
+    input_values = {
+        Path(input_drv).name: {"dynamicOutputs": {}, "outputs": input_outputs}
+        for input_drv, input_outputs in (inputs or {}).items()
+    }
+    output_values = {
+        output_name: {
+            "path": Path(output(hash_character, f"{name}-{output_name}")).name
+        }
+        for output_name in outputs
+    }
+    return {
+        "system": "x86_64-linux",
+        "outputs": output_values,
+        "inputs": {"drvs": input_values, "srcs": []},
+    }
+
+
+def target(name: str, order: int = 0) -> dict[str, object]:
+    return {
+        "id": f"x86_64-linux:{name}",
+        "name": name,
+        "system": "x86_64-linux",
+        "runner": "ubuntu-24.04",
+        "order": order,
+    }
+
+
+class GenerateLayersTest(unittest.TestCase):
+    def test_layers_all_missing_internal_derivations(self) -> None:
+        a = drv("a", "a")
+        b = drv("b", "b")
+        c = drv("c", "c")
+        d = drv("d", "d")
+        graph = {
+            a: derivation("a", "e"),
+            b: derivation("b", "f", {a: ["out"]}),
+            c: derivation("c", "g", {a: ["out"]}),
+            d: derivation("d", "h", {b: ["out"], c: ["out"]}),
+        }
+        targets = [target("d")]
+        drv_paths = {"x86_64-linux:d": d}
+        requested_outputs = {"x86_64-linux:d": {"out"}}
+
+        missing, needed, owners = generate_layers.missing_derivations(
+            targets, drv_paths, requested_outputs, graph, set()
         )
-        layers = generate_layers.topological_layers(canonical, dependencies)
+        nodes, dependencies = generate_layers.build_nodes(
+            {"systems": [{"system": "x86_64-linux", "runner": "ubuntu-24.04"}]},
+            graph,
+            missing,
+            needed,
+            owners,
+        )
+        layers = generate_layers.topological_layers(nodes, dependencies)
 
         self.assertEqual(
-            [[target["name"] for target in layer] for layer in layers],
+            [[node["name"] for node in layer] for layer in layers],
             [["a"], ["b", "c"], ["d"]],
         )
+        self.assertTrue(all(node["package"] == "d" for node in nodes))
 
-    def test_retries_nix_batch_query_by_bisection(self) -> None:
-        paths = [f"/nix/store/{name}" for name in ["a", "b", "c", "d"]]
-        responses = [
-            SimpleNamespace(
-                returncode=1,
-                stdout="",
-                stderr=f"error: path '{paths[1]}' is not valid",
-            ),
-            SimpleNamespace(
-                returncode=0,
-                stdout=json.dumps({paths[0]: {}, paths[1]: None}),
-                stderr="",
-            ),
-            SimpleNamespace(
-                returncode=0,
-                stdout=json.dumps({paths[2]: {}, paths[3]: None}),
-                stderr="",
-            ),
-        ]
+    def test_cached_dependency_cuts_the_graph(self) -> None:
+        a = drv("a", "a")
+        b = drv("b", "b")
+        graph = {
+            a: derivation("a", "c"),
+            b: derivation("b", "d", {a: ["out"]}),
+        }
+        targets = [target("b")]
+        drv_paths = {"x86_64-linux:b": b}
+        requested_outputs = {"x86_64-linux:b": {"out"}}
+        cached = {output("c", "a-out")}
+
+        missing, needed, owners = generate_layers.missing_derivations(
+            targets, drv_paths, requested_outputs, graph, cached
+        )
+
+        self.assertEqual(missing, {b})
+        self.assertEqual(needed[a], {"out"})
+        self.assertEqual(owners[b]["name"], "b")
+
+    def test_unions_outputs_from_multiple_roots(self) -> None:
+        shared = drv("a", "shared")
+        left = drv("b", "left")
+        right = drv("c", "right")
+        graph = {
+            shared: derivation("shared", "d", outputs=("out", "dev")),
+            left: derivation("left", "e", {shared: ["out"]}),
+            right: derivation("right", "f", {shared: ["dev"]}),
+        }
+        targets = [target("left", 0), target("right", 1)]
+        drv_paths = {
+            "x86_64-linux:left": left,
+            "x86_64-linux:right": right,
+        }
+        requested_outputs = {
+            "x86_64-linux:left": {"out"},
+            "x86_64-linux:right": {"out"},
+        }
+        cached = {output("d", "shared-out")}
+
+        missing, needed, _ = generate_layers.missing_derivations(
+            targets, drv_paths, requested_outputs, graph, cached
+        )
+
+        self.assertEqual(missing, {shared, left, right})
+        self.assertEqual(needed[shared], {"out", "dev"})
+
+    def test_cached_root_does_not_expand_inputs(self) -> None:
+        dependency = drv("a", "dependency")
+        root = drv("b", "root")
+        graph = {
+            dependency: derivation("dependency", "c"),
+            root: derivation("root", "d", {dependency: ["out"]}),
+        }
+        targets = [target("root")]
+        drv_paths = {"x86_64-linux:root": root}
+        requested_outputs = {"x86_64-linux:root": {"out"}}
+        cached = {output("d", "root-out")}
+
+        missing, needed, _ = generate_layers.missing_derivations(
+            targets, drv_paths, requested_outputs, graph, cached
+        )
+
+        self.assertEqual(missing, set())
+        self.assertNotIn(dependency, needed)
+
+    def test_queries_cache_with_requested_worker_count(self) -> None:
+        paths = [output("a", "a"), output("b", "b"), output("c", "c")]
 
         with patch.object(
-            generate_layers.subprocess, "run", side_effect=responses
-        ) as run:
-            result = generate_layers.query_cache("https://cache.example", paths)
+            generate_layers,
+            "narinfo_exists",
+            side_effect=lambda _store, path: path != paths[1],
+        ) as exists:
+            result = generate_layers.query_cache(
+                "https://cache.example", paths, workers=7
+            )
 
         self.assertEqual(result, {paths[0], paths[2]})
-        self.assertEqual(run.call_count, 3)
-        first_command = run.call_args_list[0].args[0]
-        self.assertNotIn("http-connections", first_command)
-        self.assertNotIn("--max-jobs", first_command)
+        self.assertEqual(exists.call_count, 3)
 
-    def test_does_not_split_network_failures(self) -> None:
-        paths = ["/nix/store/a", "/nix/store/b"]
-        response = SimpleNamespace(
-            returncode=1,
-            stdout="",
-            stderr="error: unable to download narinfo: TLS failure",
-        )
-
+    def test_reads_nix_http_connection_setting(self) -> None:
         with patch.object(
-            generate_layers.subprocess, "run", return_value=response
-        ) as run:
-            result = generate_layers.query_cache("https://cache.example", paths)
+            generate_layers,
+            "run_json",
+            return_value={"http-connections": {"value": 31, "defaultValue": 25}},
+        ):
+            self.assertEqual(generate_layers.nix_http_connections(), 31)
 
-        self.assertEqual(result, set())
-        self.assertEqual(run.call_count, 1)
+    def test_rejects_dynamic_derivation_inputs(self) -> None:
+        dependency = drv("a", "dependency")
+        root = drv("b", "root")
+        value = derivation("root", "c", {dependency: ["out"]})
+        value["inputs"]["drvs"][Path(dependency).name]["dynamicOutputs"] = {"out": {}}
 
-    def test_prunes_only_fully_cached_targets(self) -> None:
-        targets = [
-            {"id": "system:a"},
-            {"id": "system:b"},
-            {"id": "system:c"},
-        ]
-        output_paths = {
-            "system:a": ["/nix/store/a"],
-            "system:b": ["/nix/store/b", "/nix/store/b-dev"],
-            "system:c": [],
-        }
-
-        result = generate_layers.uncached_targets(
-            targets,
-            output_paths,
-            {"/nix/store/a", "/nix/store/b"},
-        )
-
-        self.assertEqual([target["id"] for target in result], ["system:b", "system:c"])
-
-    def test_compresses_layers_after_cache_pruning(self) -> None:
-        targets = [
-            {
-                "id": "x86_64-linux:b",
-                "name": "b",
-                "system": "x86_64-linux",
-                "runner": "ubuntu-24.04",
-                "order": 1,
-            }
-        ]
-        drv_paths = {"x86_64-linux:b": "/nix/store/b.drv"}
-        graph = {
-            "/nix/store/a.drv": {"inputDrvs": {}},
-            "/nix/store/b.drv": {"inputDrvs": {"/nix/store/a.drv": {}}},
-        }
-
-        canonical, dependencies = generate_layers.package_dependencies(
-            targets, drv_paths, graph
-        )
-        layers = generate_layers.topological_layers(canonical, dependencies)
-
-        self.assertEqual(
-            [[target["name"] for target in layer] for layer in layers], [["b"]]
-        )
+        with self.assertRaisesRegex(ValueError, "dynamic derivation"):
+            generate_layers.derivation_inputs(root, value)
 
     def test_adds_disabled_matrices_for_unused_layers(self) -> None:
-        layers = [
-            [
-                {
-                    "name": "a",
-                    "system": "x86_64-linux",
-                    "runner": "ubuntu-24.04",
-                }
-            ]
-        ]
+        node = {
+            "name": "a",
+            "package": "root",
+            "ownerSystem": "x86_64-linux",
+            "system": "x86_64-linux",
+            "runner": "ubuntu-24.04",
+            "derivation": drv("a", "a"),
+            "outputs": "out",
+            "inputs": "[]",
+        }
 
-        matrices = generate_layers.matrix_layers(layers, 3)
+        matrices = generate_layers.matrix_layers([[node]], 3, 10)
 
         self.assertTrue(matrices[0]["include"][0]["enabled"])
         self.assertFalse(matrices[1]["include"][0]["enabled"])
         self.assertFalse(matrices[2]["include"][0]["enabled"])
 
-    def test_reads_current_derivation_json_inputs(self) -> None:
-        self.assertEqual(
-            generate_layers.input_drvs({"inputs": {"drvs": {"abc-package.drv": {}}}}),
-            {"/nix/store/abc-package.drv"},
-        )
-
-    def test_rejects_too_many_layers(self) -> None:
-        with self.assertRaisesRegex(ValueError, "needs 2 layers"):
-            generate_layers.matrix_layers([[], []], 1)
+    def test_rejects_too_many_jobs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "needs 2 jobs"):
+            generate_layers.matrix_layers([[{}, {}]], 1, 1)
 
 
 if __name__ == "__main__":

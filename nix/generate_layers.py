@@ -4,7 +4,12 @@ import argparse
 import json
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
+from collections import deque
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +17,8 @@ DEFAULT_CACHE_STORES = [
     "https://cache.nixos.org",
     "https://cache.bingyin.org",
 ]
+DEFAULT_HTTP_CONNECTIONS = 25
+MAX_HTTP_CONNECTIONS = 64
 
 
 def run_json(command: list[str]) -> dict[str, Any]:
@@ -30,11 +37,10 @@ def run_json(command: list[str]) -> dict[str, Any]:
 
 def workflow_targets(plan: dict[str, Any], workflow: str) -> list[dict[str, Any]]:
     phases = plan["workflows"][workflow]
-    systems = plan["systems"]
     targets: list[dict[str, Any]] = []
     order = 0
 
-    for system_entry in systems:
+    for system_entry in plan["systems"]:
         system = system_entry["system"]
         runner = system_entry["runner"]
         for phase in phases:
@@ -62,9 +68,9 @@ def workflow_targets(plan: dict[str, Any], workflow: str) -> list[dict[str, Any]
 def evaluate_targets(
     flake: str,
     targets: list[dict[str, Any]],
-) -> tuple[dict[str, str], dict[str, list[str]]]:
+) -> tuple[dict[str, str], dict[str, set[str]]]:
     drv_paths: dict[str, str] = {}
-    output_paths: dict[str, list[str]] = {}
+    requested_outputs: dict[str, set[str]] = {}
     systems = list(dict.fromkeys(target["system"] for target in targets))
 
     for system in systems:
@@ -79,7 +85,7 @@ def evaluate_targets(
             'outputs = package.meta.outputsToInstall or [ (package.outputName or "out") ]; '
             "in { inherit name; value = { "
             "drvPath = package.drvPath; "
-            "outputPaths = map (output: builtins.toString (builtins.getAttr output package)) outputs; "
+            "outputNames = outputs; "
             "}; }) names)"
         )
         evaluated = run_json(
@@ -97,117 +103,19 @@ def evaluate_targets(
             if not isinstance(value, dict):
                 raise TypeError(f"missing evaluation result for {target['id']}")
             drv_path = value.get("drvPath")
-            outputs = value.get("outputPaths")
+            outputs = value.get("outputNames")
             if not isinstance(drv_path, str):
                 raise TypeError(f"missing drvPath for {target['id']}")
             if not isinstance(outputs, list) or not all(
                 isinstance(output, str) for output in outputs
             ):
-                raise TypeError(f"missing output paths for {target['id']}")
+                raise TypeError(f"missing output names for {target['id']}")
+            if not outputs:
+                raise ValueError(f"target {target['id']} requests no outputs")
             drv_paths[target["id"]] = drv_path
-            output_paths[target["id"]] = outputs
+            requested_outputs[target["id"]] = set(outputs)
 
-    return drv_paths, output_paths
-
-
-def parse_cache_result(stdout: str, paths: list[str]) -> set[str] | None:
-    try:
-        value = json.loads(stdout)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(value, dict) or set(value) != set(paths):
-        return None
-    return {path for path, metadata in value.items() if metadata is not None}
-
-
-def query_cache_batch(store: str, paths: list[str], depth: int = 0) -> set[str]:
-    command = [
-        "nix",
-        "path-info",
-        "--json",
-        "--json-format",
-        "1",
-        "--store",
-        store,
-        *paths,
-    ]
-    result = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    found = parse_cache_result(result.stdout, paths)
-    if found is not None:
-        return found
-
-    is_invalid_path_bug = "is not valid" in result.stderr
-    if len(paths) > 1 and is_invalid_path_bug:
-        middle = len(paths) // 2
-        if depth == 0:
-            print(
-                f"cache query hit the Nix batch bug for {store}; retrying {len(paths)} paths by bisection",
-                file=sys.stderr,
-            )
-        return query_cache_batch(store, paths[:middle], depth + 1) | query_cache_batch(
-            store, paths[middle:], depth + 1
-        )
-
-    print(
-        f"warning: cache query failed for {store}; scheduling {len(paths)} affected paths",
-        file=sys.stderr,
-    )
-    if result.stderr:
-        print(result.stderr.rstrip(), file=sys.stderr)
-    return set()
-
-
-def query_cache(store: str, paths: Iterable[str]) -> set[str]:
-    unique_paths = list(dict.fromkeys(paths))
-    if not unique_paths:
-        return set()
-
-    print(
-        f"+ nix path-info --store {store} ({len(unique_paths)} paths)",
-        file=sys.stderr,
-    )
-    return query_cache_batch(store, unique_paths)
-
-
-def cached_paths(stores: list[str], paths: Iterable[str]) -> set[str]:
-    missing = set(paths)
-    cached: set[str] = set()
-
-    for store in stores:
-        found = query_cache(store, sorted(missing))
-        cached.update(found)
-        missing.difference_update(found)
-        print(
-            f"cache {store}: found {len(found)}, remaining {len(missing)}",
-            file=sys.stderr,
-        )
-        if not missing:
-            break
-
-    return cached
-
-
-def uncached_targets(
-    targets: list[dict[str, Any]],
-    output_paths: dict[str, list[str]],
-    cached: set[str],
-) -> list[dict[str, Any]]:
-    result = [
-        target
-        for target in targets
-        if not output_paths[target["id"]]
-        or not all(output in cached for output in output_paths[target["id"]])
-    ]
-    print(
-        f"cache pruning: {len(targets) - len(result)} cached, {len(result)} to build",
-        file=sys.stderr,
-    )
-    return result
+    return drv_paths, requested_outputs
 
 
 def store_path(value: str) -> str:
@@ -227,96 +135,346 @@ def derivation_graph(drv_paths: Iterable[str]) -> dict[str, Any]:
     return value
 
 
-def input_drvs(derivation: dict[str, Any]) -> set[str]:
+def derivation_outputs(drv_path: str, derivation: dict[str, Any]) -> dict[str, str]:
+    outputs = derivation.get("outputs", {})
+    if not isinstance(outputs, dict):
+        raise TypeError(f"derivation {drv_path} has invalid outputs")
+
+    result: dict[str, str] = {}
+    for name, value in outputs.items():
+        path: Any
+        if isinstance(value, dict):
+            path = value.get("path")
+        else:
+            path = value
+        if path is None:
+            continue
+        if not isinstance(path, str):
+            raise TypeError(f"derivation {drv_path} output {name} has invalid path")
+        result[name] = store_path(path)
+    return result
+
+
+def derivation_inputs(drv_path: str, derivation: dict[str, Any]) -> dict[str, set[str]]:
     inputs = derivation.get("inputDrvs")
     if inputs is None:
         nested_inputs = derivation.get("inputs", {})
-        if isinstance(nested_inputs, dict):
-            inputs = nested_inputs.get("drvs", {})
+        if not isinstance(nested_inputs, dict):
+            raise TypeError(f"derivation {drv_path} has invalid inputs")
+        inputs = nested_inputs.get("drvs", {})
+    if not isinstance(inputs, dict):
+        raise TypeError(f"derivation {drv_path} has invalid inputDrvs")
+
+    result: dict[str, set[str]] = {}
+    for input_path, value in inputs.items():
+        outputs: Any
+        dynamic_outputs: Any = {}
+        if isinstance(value, dict):
+            outputs = value.get("outputs", [])
+            dynamic_outputs = value.get("dynamicOutputs", {})
         else:
-            inputs = {}
-    if isinstance(inputs, dict):
-        return {store_path(value) for value in inputs}
-    if isinstance(inputs, list):
-        return {store_path(value) for value in inputs if isinstance(value, str)}
-    raise ValueError(f"unsupported inputDrvs value: {type(inputs).__name__}")
+            outputs = value
+        if dynamic_outputs:
+            raise ValueError(
+                f"unsupported dynamic derivation input {input_path} in {drv_path}"
+            )
+        if not isinstance(outputs, list) or not all(
+            isinstance(output, str) for output in outputs
+        ):
+            raise TypeError(
+                f"derivation {drv_path} has invalid outputs for {input_path}"
+            )
+        if not outputs:
+            raise ValueError(
+                f"derivation {drv_path} requests no outputs from {input_path}"
+            )
+        result[store_path(input_path)] = set(outputs)
+    return result
 
 
-def reachable_drvs(root: str, graph: dict[str, Any]) -> set[str]:
-    reached: set[str] = set()
-    pending = list(input_drvs(graph[root]))
-
-    while pending:
-        drv_path = pending.pop()
-        if drv_path in reached:
-            continue
-        reached.add(drv_path)
-        derivation = graph.get(drv_path)
-        if isinstance(derivation, dict):
-            pending.extend(input_drvs(derivation))
-
-    return reached
+def derivation_sources(drv_path: str, derivation: dict[str, Any]) -> set[str]:
+    sources = derivation.get("inputSrcs")
+    if sources is None:
+        inputs = derivation.get("inputs", {})
+        if not isinstance(inputs, dict):
+            raise TypeError(f"derivation {drv_path} has invalid inputs")
+        sources = inputs.get("srcs", [])
+    if not isinstance(sources, list) or not all(
+        isinstance(source, str) for source in sources
+    ):
+        raise TypeError(f"derivation {drv_path} has invalid input sources")
+    return {store_path(source) for source in sources}
 
 
-def package_dependencies(
+def output_paths(
+    drv_path: str,
+    output_names: set[str],
+    graph: dict[str, Any],
+) -> set[str]:
+    derivation = graph.get(drv_path)
+    if derivation is None:
+        raise ValueError(f"derivation graph does not contain {drv_path}")
+    if not isinstance(derivation, dict):
+        raise TypeError(f"derivation graph entry {drv_path} is not an object")
+    outputs = derivation_outputs(drv_path, derivation)
+    missing_names = output_names - outputs.keys()
+    if missing_names:
+        raise ValueError(
+            f"derivation {drv_path} has dynamic or unknown outputs: {sorted(missing_names)}"
+        )
+    return {outputs[name] for name in output_names}
+
+
+def required_cache_paths(
     targets: list[dict[str, Any]],
     drv_paths: dict[str, str],
+    requested_outputs: dict[str, set[str]],
     graph: dict[str, Any],
-) -> tuple[list[dict[str, Any]], dict[str, set[str]]]:
-    canonical_targets: list[dict[str, Any]] = []
-    canonical_by_system_drv: dict[tuple[str, str], str] = {}
+) -> set[str]:
+    paths: set[str] = set()
+    for target in targets:
+        target_id = target["id"]
+        paths.update(
+            output_paths(drv_paths[target_id], requested_outputs[target_id], graph)
+        )
+
+    for drv_path, derivation in graph.items():
+        if not isinstance(derivation, dict):
+            raise TypeError(f"derivation graph entry {drv_path} is not an object")
+        for input_drv, outputs in derivation_inputs(drv_path, derivation).items():
+            paths.update(output_paths(input_drv, outputs, graph))
+    return paths
+
+
+def nix_http_connections() -> int:
+    try:
+        config = run_json(["nix", "config", "show", "--json"])
+        setting = config.get("http-connections", {})
+        if isinstance(setting, dict):
+            value = setting.get("value", setting.get("defaultValue"))
+            if isinstance(value, int):
+                if value == 0:
+                    return MAX_HTTP_CONNECTIONS
+                return max(1, min(value, MAX_HTTP_CONNECTIONS))
+    except (subprocess.CalledProcessError, json.JSONDecodeError, TypeError):
+        pass
+    return DEFAULT_HTTP_CONNECTIONS
+
+
+def narinfo_url(store: str, path: str) -> str:
+    store_hash = Path(path).name.split("-", 1)[0]
+    if len(store_hash) != 32:
+        raise ValueError(f"invalid Nix store path: {path}")
+    return f"{store.rstrip('/')}/{store_hash}.narinfo"
+
+
+def narinfo_exists(store: str, path: str, timeout: float = 15.0) -> bool | None:
+    url = narinfo_url(store, path)
+    for attempt in range(2):
+        request = urllib.request.Request(url, method="HEAD")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.status in {None, 200}
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                return False
+            if error.code == 405:
+                try:
+                    with urllib.request.urlopen(url, timeout=timeout) as response:
+                        return response.status in {None, 200}
+                except urllib.error.HTTPError as get_error:
+                    if get_error.code == 404:
+                        return False
+                    if get_error.code not in {429, 500, 502, 503, 504}:
+                        return None
+                except urllib.error.URLError:
+                    return None
+            elif error.code not in {429, 500, 502, 503, 504}:
+                return None
+        except urllib.error.URLError:
+            if attempt == 1:
+                return None
+        if attempt == 0:
+            time.sleep(0.5)
+    return None
+
+
+def query_cache(store: str, paths: Iterable[str], workers: int) -> set[str]:
+    unique_paths = sorted(set(paths))
+    if not unique_paths:
+        return set()
+
+    print(
+        f"+ query {store} ({len(unique_paths)} paths, {workers} connections)",
+        file=sys.stderr,
+    )
+    cached: set[str] = set()
+    unknown = 0
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        results = executor.map(lambda path: narinfo_exists(store, path), unique_paths)
+        for path, result in zip(unique_paths, results, strict=True):
+            if result is True:
+                cached.add(path)
+            elif result is None:
+                unknown += 1
+
+    if unknown:
+        print(
+            f"warning: {store} returned an unknown result for {unknown} paths; treating them as missing",
+            file=sys.stderr,
+        )
+    return cached
+
+
+def cached_paths(
+    stores: list[str],
+    paths: Iterable[str],
+    workers: int,
+) -> set[str]:
+    missing = set(paths)
+    cached: set[str] = set()
+
+    for store in stores:
+        found = query_cache(store, missing, workers)
+        cached.update(found)
+        missing.difference_update(found)
+        print(
+            f"cache {store}: found {len(found)}, remaining {len(missing)}",
+            file=sys.stderr,
+        )
+        if not missing:
+            break
+    return cached
+
+
+def missing_derivations(
+    targets: list[dict[str, Any]],
+    drv_paths: dict[str, str],
+    requested_outputs: dict[str, set[str]],
+    graph: dict[str, Any],
+    cached: set[str],
+) -> tuple[set[str], dict[str, set[str]], dict[str, dict[str, Any]]]:
+    target_by_id = {target["id"]: target for target in targets}
+    needed_outputs: dict[str, set[str]] = {}
+    owner_by_drv: dict[str, dict[str, Any]] = {}
+    pending: deque[str] = deque()
 
     for target in targets:
-        drv_path = drv_paths[target["id"]]
-        key = (target["system"], drv_path)
-        if key in canonical_by_system_drv:
-            print(
-                f"deduplicating {target['id']} with {canonical_by_system_drv[key]} at {drv_path}",
-                file=sys.stderr,
-            )
-            continue
-        canonical_by_system_drv[key] = target["id"]
-        canonical_targets.append(target)
-
-    dependencies: dict[str, set[str]] = {}
-    for target in canonical_targets:
         target_id = target["id"]
-        root_drv = drv_paths[target_id]
-        if root_drv not in graph:
-            raise ValueError(f"derivation graph does not contain {root_drv}")
-        reachable = reachable_drvs(root_drv, graph)
-        dependencies[target_id] = {
-            dependency_id
-            for (system, drv_path), dependency_id in canonical_by_system_drv.items()
-            if system == target["system"] and drv_path in reachable
-        }
+        drv_path = drv_paths[target_id]
+        needed_outputs.setdefault(drv_path, set()).update(requested_outputs[target_id])
+        owner_by_drv.setdefault(drv_path, target_by_id[target_id])
+        pending.append(drv_path)
 
-    return canonical_targets, dependencies
+    missing: set[str] = set()
+    expanded: set[str] = set()
+    while pending:
+        drv_path = pending.popleft()
+        required = needed_outputs[drv_path]
+        if output_paths(drv_path, required, graph).issubset(cached):
+            continue
+
+        missing.add(drv_path)
+        if drv_path in expanded:
+            continue
+        expanded.add(drv_path)
+
+        derivation = graph[drv_path]
+        for input_drv, outputs in derivation_inputs(drv_path, derivation).items():
+            before = len(needed_outputs.get(input_drv, set()))
+            needed_outputs.setdefault(input_drv, set()).update(outputs)
+            owner_by_drv.setdefault(input_drv, owner_by_drv[drv_path])
+            if len(needed_outputs[input_drv]) != before or input_drv not in expanded:
+                pending.append(input_drv)
+
+    print(
+        f"cache pruning: {len(graph) - len(missing)} cached or unreachable, {len(missing)} derivations to build",
+        file=sys.stderr,
+    )
+    return missing, needed_outputs, owner_by_drv
+
+
+def derived_path(drv_path: str, outputs: set[str]) -> str:
+    return f"{drv_path}^{','.join(sorted(outputs))}"
+
+
+def build_nodes(
+    plan: dict[str, Any],
+    graph: dict[str, Any],
+    missing: set[str],
+    needed_outputs: dict[str, set[str]],
+    owner_by_drv: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, set[str]]]:
+    runner_by_system = {
+        system["system"]: system["runner"] for system in plan["systems"]
+    }
+    graph_order = {drv_path: index for index, drv_path in enumerate(graph)}
+    nodes: list[dict[str, Any]] = []
+    dependencies: dict[str, set[str]] = {}
+
+    for drv_path in missing:
+        derivation = graph[drv_path]
+        owner = owner_by_drv[drv_path]
+        drv_system = derivation.get("system", owner["system"])
+        if drv_system in runner_by_system:
+            runner = runner_by_system[drv_system]
+            system = drv_system
+        elif drv_system == "builtin":
+            runner = owner["runner"]
+            system = owner["system"]
+        else:
+            raise ValueError(
+                f"no GitHub runner configured for derivation system {drv_system}"
+            )
+
+        inputs = derivation_inputs(drv_path, derivation)
+        direct_inputs = [
+            derived_path(input_drv, outputs)
+            for input_drv, outputs in sorted(inputs.items())
+        ]
+        direct_inputs.extend(sorted(derivation_sources(drv_path, derivation)))
+        basename = Path(drv_path).name
+        display_name = basename.split("-", 1)[1].removesuffix(".drv")
+        nodes.append(
+            {
+                "id": drv_path,
+                "name": display_name,
+                "package": owner["name"],
+                "ownerSystem": owner["system"],
+                "system": system,
+                "runner": runner,
+                "derivation": drv_path,
+                "outputs": ",".join(sorted(needed_outputs[drv_path])),
+                "inputs": json.dumps(direct_inputs, separators=(",", ":")),
+                "order": owner["order"] * 1_000_000 + graph_order[drv_path],
+            }
+        )
+        dependencies[drv_path] = set(inputs) & missing
+
+    return nodes, dependencies
 
 
 def topological_layers(
-    targets: list[dict[str, Any]],
+    nodes: list[dict[str, Any]],
     dependencies: dict[str, set[str]],
 ) -> list[list[dict[str, Any]]]:
-    by_id = {target["id"]: target for target in targets}
-    remaining = {target_id: set(values) for target_id, values in dependencies.items()}
+    by_id = {node["id"]: node for node in nodes}
+    remaining = {node_id: set(values) for node_id, values in dependencies.items()}
     layers: list[list[dict[str, Any]]] = []
 
     while remaining:
-        ready_ids = [target_id for target_id, values in remaining.items() if not values]
+        ready_ids = [node_id for node_id, values in remaining.items() if not values]
         if not ready_ids:
-            cycle = {
-                target_id: sorted(values) for target_id, values in remaining.items()
-            }
-            raise ValueError(f"package dependency graph contains a cycle: {cycle}")
+            cycle = {node_id: sorted(values) for node_id, values in remaining.items()}
+            raise ValueError(f"derivation dependency graph contains a cycle: {cycle}")
 
-        ready_ids.sort(key=lambda target_id: by_id[target_id]["order"])
-        layers.append([by_id[target_id] for target_id in ready_ids])
+        ready_ids.sort(key=lambda node_id: by_id[node_id]["order"])
+        layers.append([by_id[node_id] for node_id in ready_ids])
         ready_set = set(ready_ids)
         remaining = {
-            target_id: values - ready_set
-            for target_id, values in remaining.items()
-            if target_id not in ready_set
+            node_id: values - ready_set
+            for node_id, values in remaining.items()
+            if node_id not in ready_set
         }
 
     return layers
@@ -325,11 +483,19 @@ def topological_layers(
 def matrix_layers(
     layers: list[list[dict[str, Any]]],
     max_layers: int,
+    max_jobs: int,
 ) -> list[dict[str, Any]]:
+    job_count = sum(len(layer) for layer in layers)
+    if job_count > max_jobs:
+        raise ValueError(
+            f"dependency graph needs {job_count} jobs, workflow supports {max_jobs}"
+        )
     if len(layers) > max_layers:
         raise ValueError(
             f"dependency graph needs {len(layers)} layers, workflow supports {max_layers}"
         )
+    if any(len(layer) > 256 for layer in layers):
+        raise ValueError("a dependency layer exceeds GitHub's 256-job matrix limit")
 
     matrices: list[dict[str, Any]] = []
     for index in range(max_layers):
@@ -337,23 +503,32 @@ def matrix_layers(
             include = [
                 {
                     "enabled": True,
-                    "package": target["name"],
-                    "system": target["system"],
-                    "runner": target["runner"],
+                    "name": node["name"],
+                    "package": node["package"],
+                    "ownerSystem": node["ownerSystem"],
+                    "system": node["system"],
+                    "runner": node["runner"],
+                    "derivation": node["derivation"],
+                    "outputs": node["outputs"],
+                    "inputs": node["inputs"],
                 }
-                for target in layers[index]
+                for node in layers[index]
             ]
         else:
             include = [
                 {
                     "enabled": False,
+                    "name": "unused",
                     "package": "unused",
+                    "ownerSystem": "none",
                     "system": "none",
                     "runner": "ubuntu-24.04",
+                    "derivation": "",
+                    "outputs": "",
+                    "inputs": "[]",
                 }
             ]
         matrices.append({"include": include})
-
     return matrices
 
 
@@ -363,6 +538,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--flake", default=".")
     parser.add_argument("--max-layers", type=int, default=32)
+    parser.add_argument("--max-jobs", type=int, default=220)
     parser.add_argument("--cache-store", action="append", dest="cache_stores")
     return parser.parse_args()
 
@@ -371,21 +547,32 @@ def main() -> None:
     args = parse_args()
     plan = json.loads(args.plan.read_text())
     targets = workflow_targets(plan, args.workflow)
-    drv_paths, output_paths = evaluate_targets(args.flake, targets)
+    drv_paths, requested_outputs = evaluate_targets(args.flake, targets)
     graph = derivation_graph(drv_paths.values())
+    paths = required_cache_paths(targets, drv_paths, requested_outputs, graph)
+    workers = nix_http_connections()
     stores = args.cache_stores or DEFAULT_CACHE_STORES
-    outputs = [output for values in output_paths.values() for output in values]
-    cached = cached_paths(stores, outputs)
-    build_targets = uncached_targets(targets, output_paths, cached)
-    canonical_targets, dependencies = package_dependencies(
-        build_targets, drv_paths, graph
+    cached = cached_paths(stores, paths, workers)
+    missing, needed_outputs, owner_by_drv = missing_derivations(
+        targets,
+        drv_paths,
+        requested_outputs,
+        graph,
+        cached,
     )
-    layers = topological_layers(canonical_targets, dependencies)
-    matrices = matrix_layers(layers, args.max_layers)
+    nodes, dependencies = build_nodes(
+        plan,
+        graph,
+        missing,
+        needed_outputs,
+        owner_by_drv,
+    )
+    layers = topological_layers(nodes, dependencies)
+    matrices = matrix_layers(layers, args.max_layers, args.max_jobs)
 
     counts = [len(layer) for layer in layers]
     print(
-        f"generated {len(layers)} layers for {len(canonical_targets)} targets: {counts}",
+        f"generated {len(layers)} layers for {len(nodes)} derivations: {counts}",
         file=sys.stderr,
     )
     print(json.dumps(matrices, separators=(",", ":")))

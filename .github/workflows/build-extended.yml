@@ -60,7 +60,7 @@ jobs:
             echo "layers=$layers"
           } >>"$GITHUB_OUTPUT"
   layer-00:
-    name: Layer 00 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 00 / ${{ matrix.system }} / ${{ matrix.name }}
     needs: prepare
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -74,9 +74,13 @@ jobs:
         uses: ./.github/actions/build-package
         with:
           package: ${{ matrix.package }}
+          owner-system: ${{ matrix.ownerSystem }}
+          derivation: ${{ matrix.derivation }}
+          outputs: ${{ matrix.outputs }}
+          inputs: ${{ matrix.inputs }}
           nixpkgs-revision: ${{ needs.prepare.outputs.nixpkgs_revision }}
   layer-01:
-    name: Layer 01 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 01 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-00
@@ -87,7 +91,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[1] }}
     steps: *build-steps
   layer-02:
-    name: Layer 02 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 02 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-01
@@ -98,7 +102,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[2] }}
     steps: *build-steps
   layer-03:
-    name: Layer 03 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 03 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-02
@@ -109,7 +113,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[3] }}
     steps: *build-steps
   layer-04:
-    name: Layer 04 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 04 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-03
@@ -120,7 +124,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[4] }}
     steps: *build-steps
   layer-05:
-    name: Layer 05 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 05 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-04
@@ -131,7 +135,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[5] }}
     steps: *build-steps
   layer-06:
-    name: Layer 06 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 06 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-05
@@ -142,7 +146,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[6] }}
     steps: *build-steps
   layer-07:
-    name: Layer 07 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 07 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-06
@@ -153,7 +157,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[7] }}
     steps: *build-steps
   layer-08:
-    name: Layer 08 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 08 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-07
@@ -164,7 +168,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[8] }}
     steps: *build-steps
   layer-09:
-    name: Layer 09 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 09 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-08
@@ -175,7 +179,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[9] }}
     steps: *build-steps
   layer-10:
-    name: Layer 10 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 10 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-09
@@ -186,7 +190,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[10] }}
     steps: *build-steps
   layer-11:
-    name: Layer 11 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 11 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-10
@@ -197,7 +201,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[11] }}
     steps: *build-steps
   layer-12:
-    name: Layer 12 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 12 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-11
@@ -208,7 +212,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[12] }}
     steps: *build-steps
   layer-13:
-    name: Layer 13 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 13 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-12
@@ -219,7 +223,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[13] }}
     steps: *build-steps
   layer-14:
-    name: Layer 14 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 14 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-13
@@ -230,7 +234,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[14] }}
     steps: *build-steps
   layer-15:
-    name: Layer 15 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 15 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-14
@@ -241,7 +245,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[15] }}
     steps: *build-steps
   layer-16:
-    name: Layer 16 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 16 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-15
@@ -252,7 +256,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[16] }}
     steps: *build-steps
   layer-17:
-    name: Layer 17 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 17 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-16
@@ -263,7 +267,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[17] }}
     steps: *build-steps
   layer-18:
-    name: Layer 18 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 18 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-17
@@ -274,7 +278,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[18] }}
     steps: *build-steps
   layer-19:
-    name: Layer 19 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 19 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-18
@@ -285,7 +289,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[19] }}
     steps: *build-steps
   layer-20:
-    name: Layer 20 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 20 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-19
@@ -296,7 +300,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[20] }}
     steps: *build-steps
   layer-21:
-    name: Layer 21 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 21 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-20
@@ -307,7 +311,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[21] }}
     steps: *build-steps
   layer-22:
-    name: Layer 22 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 22 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-21
@@ -318,7 +322,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[22] }}
     steps: *build-steps
   layer-23:
-    name: Layer 23 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 23 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-22
@@ -329,7 +333,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[23] }}
     steps: *build-steps
   layer-24:
-    name: Layer 24 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 24 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-23
@@ -340,7 +344,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[24] }}
     steps: *build-steps
   layer-25:
-    name: Layer 25 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 25 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-24
@@ -351,7 +355,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[25] }}
     steps: *build-steps
   layer-26:
-    name: Layer 26 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 26 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-25
@@ -362,7 +366,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[26] }}
     steps: *build-steps
   layer-27:
-    name: Layer 27 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 27 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-26
@@ -373,7 +377,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[27] }}
     steps: *build-steps
   layer-28:
-    name: Layer 28 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 28 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-27
@@ -384,7 +388,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[28] }}
     steps: *build-steps
   layer-29:
-    name: Layer 29 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 29 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-28
@@ -395,7 +399,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[29] }}
     steps: *build-steps
   layer-30:
-    name: Layer 30 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 30 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-29
@@ -406,7 +410,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[30] }}
     steps: *build-steps
   layer-31:
-    name: Layer 31 / ${{ matrix.system }} / ${{ matrix.package }}
+    name: Layer 31 / ${{ matrix.system }} / ${{ matrix.name }}
     needs:
       - prepare
       - layer-30
