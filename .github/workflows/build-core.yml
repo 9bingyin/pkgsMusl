@@ -62,7 +62,7 @@ jobs:
 
           nix flake lock \
             --override-input nixpkgs-build "github:NixOS/nixpkgs/$revision"
-          layers="$(python3 nix/generate_layers.py --workflow core --max-layers 32)"
+          layers="$(python3 nix/generate_layers.py --workflow core --max-layers 64)"
 
           {
             echo "nixpkgs_revision=$revision"
@@ -428,4 +428,356 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix: ${{ fromJSON(needs.prepare.outputs.layers)[31] }}
+    steps: *build-steps
+  layer-32:
+    name: Layer 32 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-31
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[32] }}
+    steps: *build-steps
+  layer-33:
+    name: Layer 33 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-32
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[33] }}
+    steps: *build-steps
+  layer-34:
+    name: Layer 34 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-33
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[34] }}
+    steps: *build-steps
+  layer-35:
+    name: Layer 35 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-34
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[35] }}
+    steps: *build-steps
+  layer-36:
+    name: Layer 36 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-35
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[36] }}
+    steps: *build-steps
+  layer-37:
+    name: Layer 37 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-36
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[37] }}
+    steps: *build-steps
+  layer-38:
+    name: Layer 38 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-37
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[38] }}
+    steps: *build-steps
+  layer-39:
+    name: Layer 39 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-38
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[39] }}
+    steps: *build-steps
+  layer-40:
+    name: Layer 40 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-39
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[40] }}
+    steps: *build-steps
+  layer-41:
+    name: Layer 41 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-40
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[41] }}
+    steps: *build-steps
+  layer-42:
+    name: Layer 42 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-41
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[42] }}
+    steps: *build-steps
+  layer-43:
+    name: Layer 43 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-42
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[43] }}
+    steps: *build-steps
+  layer-44:
+    name: Layer 44 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-43
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[44] }}
+    steps: *build-steps
+  layer-45:
+    name: Layer 45 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-44
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[45] }}
+    steps: *build-steps
+  layer-46:
+    name: Layer 46 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-45
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[46] }}
+    steps: *build-steps
+  layer-47:
+    name: Layer 47 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-46
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[47] }}
+    steps: *build-steps
+  layer-48:
+    name: Layer 48 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-47
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[48] }}
+    steps: *build-steps
+  layer-49:
+    name: Layer 49 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-48
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[49] }}
+    steps: *build-steps
+  layer-50:
+    name: Layer 50 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-49
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[50] }}
+    steps: *build-steps
+  layer-51:
+    name: Layer 51 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-50
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[51] }}
+    steps: *build-steps
+  layer-52:
+    name: Layer 52 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-51
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[52] }}
+    steps: *build-steps
+  layer-53:
+    name: Layer 53 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-52
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[53] }}
+    steps: *build-steps
+  layer-54:
+    name: Layer 54 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-53
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[54] }}
+    steps: *build-steps
+  layer-55:
+    name: Layer 55 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-54
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[55] }}
+    steps: *build-steps
+  layer-56:
+    name: Layer 56 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-55
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[56] }}
+    steps: *build-steps
+  layer-57:
+    name: Layer 57 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-56
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[57] }}
+    steps: *build-steps
+  layer-58:
+    name: Layer 58 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-57
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[58] }}
+    steps: *build-steps
+  layer-59:
+    name: Layer 59 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-58
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[59] }}
+    steps: *build-steps
+  layer-60:
+    name: Layer 60 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-59
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[60] }}
+    steps: *build-steps
+  layer-61:
+    name: Layer 61 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-60
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[61] }}
+    steps: *build-steps
+  layer-62:
+    name: Layer 62 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-61
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[62] }}
+    steps: *build-steps
+  layer-63:
+    name: Layer 63 / ${{ matrix.system }} / ${{ matrix.name }}
+    needs:
+      - prepare
+      - layer-62
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.layers)[63] }}
     steps: *build-steps

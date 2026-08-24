@@ -2,6 +2,7 @@
 
 import sys
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -151,6 +152,26 @@ class GenerateLayersTest(unittest.TestCase):
         self.assertEqual(missing, set())
         self.assertNotIn(dependency, needed)
 
+    def test_narinfo_request_uses_explicit_user_agent(self) -> None:
+        path = output("a", "missing")
+
+        def reject_missing(request, timeout):
+            self.assertEqual(
+                request.get_header("User-agent"), generate_layers.NARINFO_USER_AGENT
+            )
+            raise urllib.error.HTTPError(
+                request.full_url,
+                404,
+                "Not Found",
+                {},
+                None,
+            )
+
+        with patch.object(generate_layers.urllib.request, "urlopen", reject_missing):
+            self.assertFalse(
+                generate_layers.narinfo_exists("https://cache.example", path)
+            )
+
     def test_queries_cache_with_requested_worker_count(self) -> None:
         paths = [output("a", "a"), output("b", "b"), output("c", "c")]
 
@@ -165,6 +186,15 @@ class GenerateLayersTest(unittest.TestCase):
 
         self.assertEqual(result, {paths[0], paths[2]})
         self.assertEqual(exists.call_count, 3)
+
+    def test_rejects_unknown_cache_results(self) -> None:
+        path = output("a", "unknown")
+
+        with (
+            patch.object(generate_layers, "narinfo_exists", return_value=None),
+            self.assertRaisesRegex(RuntimeError, "unknown result for 1 paths"),
+        ):
+            generate_layers.query_cache("https://cache.example", [path], workers=1)
 
     def test_reads_nix_http_connection_setting(self) -> None:
         with patch.object(
@@ -213,9 +243,25 @@ class GenerateLayersTest(unittest.TestCase):
         self.assertFalse(matrices[1]["include"][0]["enabled"])
         self.assertFalse(matrices[2]["include"][0]["enabled"])
 
-    def test_rejects_too_many_jobs(self) -> None:
+    def test_rejects_explicit_job_limit(self) -> None:
         with self.assertRaisesRegex(ValueError, "needs 2 jobs"):
             generate_layers.matrix_layers([[{}, {}]], 1, 1)
+
+    def test_has_no_default_total_job_limit(self) -> None:
+        node = {
+            "name": "a",
+            "package": "root",
+            "ownerSystem": "x86_64-linux",
+            "system": "x86_64-linux",
+            "runner": "ubuntu-24.04",
+            "derivation": drv("a", "a"),
+            "outputs": "out",
+            "inputs": "[]",
+        }
+
+        matrices = generate_layers.matrix_layers([[node] * 200, [node] * 126], 2, None)
+
+        self.assertEqual(sum(len(matrix["include"]) for matrix in matrices), 326)
 
 
 if __name__ == "__main__":

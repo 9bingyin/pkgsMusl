@@ -19,6 +19,7 @@ DEFAULT_CACHE_STORES = [
 ]
 DEFAULT_HTTP_CONNECTIONS = 25
 MAX_HTTP_CONNECTIONS = 64
+NARINFO_USER_AGENT = "pkgsMusl-cache-planner/1.0"
 
 
 def run_json(command: list[str]) -> dict[str, Any]:
@@ -281,25 +282,40 @@ def narinfo_url(store: str, path: str) -> str:
 def narinfo_exists(store: str, path: str, timeout: float = 15.0) -> bool | None:
     url = narinfo_url(store, path)
     for attempt in range(2):
-        request = urllib.request.Request(url, method="HEAD")
+        request = urllib.request.Request(
+            url,
+            method="HEAD",
+            headers={"User-Agent": NARINFO_USER_AGENT},
+        )
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return response.status in {None, 200}
         except urllib.error.HTTPError as error:
-            if error.code == 404:
+            status = error.code
+            error.close()
+            if status == 404:
                 return False
-            if error.code == 405:
+            if status == 405:
                 try:
-                    with urllib.request.urlopen(url, timeout=timeout) as response:
+                    get_request = urllib.request.Request(
+                        url,
+                        method="GET",
+                        headers={"User-Agent": NARINFO_USER_AGENT},
+                    )
+                    with urllib.request.urlopen(
+                        get_request, timeout=timeout
+                    ) as response:
                         return response.status in {None, 200}
                 except urllib.error.HTTPError as get_error:
-                    if get_error.code == 404:
+                    get_status = get_error.code
+                    get_error.close()
+                    if get_status == 404:
                         return False
-                    if get_error.code not in {429, 500, 502, 503, 504}:
+                    if get_status not in {429, 500, 502, 503, 504}:
                         return None
                 except urllib.error.URLError:
                     return None
-            elif error.code not in {429, 500, 502, 503, 504}:
+            elif status not in {429, 500, 502, 503, 504}:
                 return None
         except urllib.error.URLError:
             if attempt == 1:
@@ -329,9 +345,9 @@ def query_cache(store: str, paths: Iterable[str], workers: int) -> set[str]:
                 unknown += 1
 
     if unknown:
-        print(
-            f"warning: {store} returned an unknown result for {unknown} paths; treating them as missing",
-            file=sys.stderr,
+        raise RuntimeError(
+            f"{store} returned an unknown result for {unknown} paths; "
+            "refusing to treat cache failures as misses"
         )
     return cached
 
@@ -493,10 +509,10 @@ def topological_layers(
 def matrix_layers(
     layers: list[list[dict[str, Any]]],
     max_layers: int,
-    max_jobs: int,
+    max_jobs: int | None,
 ) -> list[dict[str, Any]]:
     job_count = sum(len(layer) for layer in layers)
-    if job_count > max_jobs:
+    if max_jobs is not None and job_count > max_jobs:
         raise ValueError(
             f"dependency graph needs {job_count} jobs, workflow supports {max_jobs}"
         )
@@ -547,8 +563,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plan", type=Path, default=Path("nix/cache-plan.json"))
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--flake", default=".")
-    parser.add_argument("--max-layers", type=int, default=32)
-    parser.add_argument("--max-jobs", type=int, default=220)
+    parser.add_argument("--max-layers", type=int, default=64)
+    parser.add_argument(
+        "--max-jobs",
+        type=int,
+        help="optional total job safety limit; each layer is always limited to 256 jobs",
+    )
     parser.add_argument("--cache-store", action="append", dest="cache_stores")
     return parser.parse_args()
 
